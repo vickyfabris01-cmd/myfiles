@@ -1,0 +1,20 @@
+/* css/viewer.css  -  full-screen viewer */
+body.v-open { overflow: hidden; }
+.v-root { position: fixed; inset: 0; z-index: 1000; background: rgba(8,9,14,.96); color: #fff; display: flex; flex-direction: column; touch-action: none; }
+.v-top { position: relative; z-index: 3; display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 8px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+.v-info { flex: 1; min-width: 0; display: flex; flex-direction: column; } .v-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .v-meta { font-size: .8rem; opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-zoom { display: flex; gap: 2px; }
+.v-btn { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; cursor: pointer; flex: none; }
+.v-btn:hover { background: rgba(255,255,255,.2); } .v-btn:disabled { opacity: .25; cursor: default; }
+.v-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: zoom-in; }
+.v-stage.zoomed { cursor: grab; }
+.v-img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; user-select: none; -webkit-user-drag: none; will-change: transform; transition: transform .08s ease-out; }
+.v-video { max-width: 100%; max-height: 100%; background: #000; outline: none; }
+.v-nav { position: absolute; z-index: 3; top: 50%; transform: translateY(-50%); width: 52px; height: 52px; }
+.v-prev { left: 10px; } .v-next { right: 10px; }
+@media (hover: none) { .v-nav { display: none; } }
+.v-spin { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.v-note { position: absolute; z-index: 3; left: 12px; right: 12px; bottom: calc(56px + env(safe-area-inset-bottom, 0px)); padding: 10px 14px; border-radius: 12px; background: rgba(0,0,0,.75); text-align: center; font-size: .9rem; }
+.v-bottom { position: relative; z-index: 3; display: flex; justify-content: center; padding: 6px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.v-count { font-size: .85rem; opacity: .75; background: rgba(0,0,0,.4); padding: 3px 12px; border-radius: 99px; }
+@media (max-width: 520px) { .v-zoom .v-btn:nth-child(1), .v-zoom .v-btn:nth-child(2) { display: none; } }

@@ -5,3 +5,6 @@ Tests: `node tests/unit.mjs` (offline) and `node tests/smoke.mjs` (live, see SET
 
 ## Administrator interface (Dev 2)
 See docs/admin-ui.md. Before deploying, put your API URL, Supabase URL and publishable key in js/config.js. The Worker's ALLOWED_ORIGINS must include your Pages URL, and the R2 bucket CORS must allow it (SETUP.md).
+
+## Public gallery (Dev 3)
+See docs/public-gallery.md. Share links are `https://<your-site>/e/<TOKEN>`.
