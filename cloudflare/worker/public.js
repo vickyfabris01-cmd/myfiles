@@ -11,7 +11,7 @@ export async function loadEvent(db, token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,128}$/.test(token)) throw unavailable('not_found');
   const hash = await hashToken(token);
   const [e] = await db.select('events', {
-    select: 'id,title,event_date,description,location,is_published,deleted_at',
+    select: 'id,title,event_date,description,location,is_published,deleted_at,cover_mode,cover_pos_x,cover_pos_y',
     share_token_hash: `eq.${hash}`,
     limit: 1,
   });
@@ -37,7 +37,7 @@ export async function validate({ request, env, db }) {
       event_date: e.event_date,
       description: e.description,
       location: e.location,
-      cover: await coverFor(env, db, coverId),
+      cover: await coverFor(env, db, coverId, e.cover_mode === 'manual' ? { x: e.cover_pos_x, y: e.cover_pos_y } : null),
     },
   };
 }

@@ -3,7 +3,8 @@ import { requireAdmin, ROUTES } from './auth.js';
 import { get, post, patch, del } from '../api.js';
 import { h, mount, formatBytes, formatEventDate, formatDateTime, timeLeft, copyText, toInputValue, fromInputValue, nowInputValue, STATE_LABEL } from '../util.js';
 import { icon } from '../icons.js';
-import { toast, showError, confirmDialog, withBusy, loading, emptyState } from '../ui.js';
+import { toast, showError, confirmDialog, withBusy, loading, emptyState, openModal } from '../ui.js';
+import { positionCover } from './cover-position.js';
 import { mountBrowser } from './folders.js';
 
 const params = new URLSearchParams(location.search);
@@ -29,6 +30,7 @@ function renderHead() {
   document.title = `${event.title} - MyFiles`;
   const actions = readOnly() ? [] : [
     h('button', { class: 'btn secondary', type: 'button', onclick: openShare }, icon('link', 18), 'Share'),
+    h('button', { class: 'btn secondary', type: 'button', onclick: openSchedule }, icon('clock', 18), event.publish_at || event.unpublish_at ? 'Scheduled' : 'Schedule'),
     h('button', { class: `btn ${event.is_published ? 'secondary' : 'primary'}`, type: 'button', onclick: (e) => togglePublish(e.currentTarget) },
       icon(event.is_published ? 'eye-off' : 'eye', 18), event.is_published ? 'Unpublish' : event.state === 'scheduled' ? 'Publish now' : 'Publish'),
   ];
@@ -106,6 +108,12 @@ async function regenerate() {
   try { const { url } = await post(`/admin/events/${id}/share-link/regenerate`); await copyText(url); toast('New link created and copied. The old link no longer works.', 'success'); renderPanels(); } catch (e) { showError(e); }
 }
 
+async function adjustCover() {
+  const p = await positionCover({ src: event.cover_url, kind: 'event', x: event.cover_pos_x, y: event.cover_pos_y, title: 'Position event cover' });
+  if (!p) return;
+  try { const r = await patch(`/admin/events/${id}`, { cover_pos_x: p.x, cover_pos_y: p.y }); setEvent(r.event); toast('Cover position saved', 'success'); } catch (e) { showError(e); }
+}
+
 /* ---------- details panel ---------- */
 function detailsPanel() {
   const ro = readOnly();
@@ -143,21 +151,22 @@ function detailsPanel() {
   return h('div', { class: 'two-col' },
     h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Event details'), form),
     h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Cover'),
-      h('div', { class: 'cover wide' }, event.cover_url ? h('img', { src: event.cover_url, alt: 'Current cover', decoding: 'async' }) : h('div', { class: 'cover-ph' }, icon('image', 32))),
+      h('div', { class: 'cover wide' }, event.cover_url ? h('img', { src: event.cover_url, alt: 'Current cover', decoding: 'async', style: `object-position:${event.cover_pos_x ?? 50}% ${event.cover_pos_y ?? 50}%` }) : h('div', { class: 'cover-ph' }, icon('image', 32))),
+      event.cover_url && event.cover_mode === 'manual' && !ro ? h('div', { class: 'row gap-s' }, h('button', { class: 'btn secondary sm', type: 'button', onclick: adjustCover }, icon('move', 16), 'Adjust position')) : null,
       h('div', { class: 'seg', role: 'group', 'aria-label': 'Cover mode' }, seg('auto', 'Automatic'), seg('manual', 'Chosen file')),
       h('p', { class: 'hint' }, event.cover_mode === 'auto'
         ? 'Automatic uses the newest photo or video thumbnail.'
         : 'Using the file you chose. If it is deleted, the newest thumbnail is used instead.'),
-      h('p', { class: 'hint' }, 'To choose a cover: open Media, select a file and tap Set as cover.')));
+      h('p', { class: 'hint' }, 'To choose a cover: open Media, tap any photo and choose Set as cover. You can then drag it to pick the visible area.')));
 }
 
 /* ---------- publishing panel ---------- */
-function scheduleRow(kind) {
+function scheduleRow(kind, after = () => {}) {
   const label = kind === 'publish_at' ? 'Publish at' : 'Unpublish at';
   const cur = event[kind];
   const input = h('input', { class: 'input', type: 'datetime-local', min: nowInputValue(), value: cur ? toInputValue(cur) : '', 'aria-label': label });
   const call = async (value, msg) => {
-    try { const r = await post(`/admin/events/${id}/schedule`, { [kind]: value }); setEvent(r.event); toast(msg, 'success'); } catch (e) { showError(e); }
+    try { const r = await post(`/admin/events/${id}/schedule`, { [kind]: value }); setEvent(r.event); toast(msg, 'success'); after(); } catch (e) { showError(e); }
   };
   const save = h('button', { class: 'btn primary sm', type: 'button', onclick: () => {
     if (!input.value) { toast('Pick a date and time first', 'error'); return; }
@@ -168,6 +177,20 @@ function scheduleRow(kind) {
   return h('div', { class: 'sched' },
     h('div', { class: 'row gap-s wrap' }, icon('clock', 18), h('b', null, label), cur ? h('span', { class: 'badge scheduled' }, formatDateTime(cur)) : h('span', { class: 'muted small' }, 'Not scheduled')),
     h('div', { class: 'row gap-s wrap' }, input, save, cancel));
+}
+
+// Schedule window: opened from the Schedule button in the page header.
+function openSchedule() {
+  const m = openModal({
+    title: 'Schedule publishing', className: 'small',
+    body: h('div', { class: 'stack' },
+      h('p', { class: 'hint' }, 'Pick the date and time the event goes live and/or goes offline. Times are Nairobi time (EAT) and are checked every minute. Nothing is deleted when an event goes offline.'),
+      event.is_published
+        ? h('p', { class: 'banner warn flat' }, icon('info', 18), h('span', null, 'The event is live now, so only a time to go offline can be set. Unpublish it first if you want to schedule when it goes live.'))
+        : scheduleRow('publish_at', () => m.close()),
+      scheduleRow('unpublish_at', () => m.close())),
+    footer: h('button', { class: 'btn secondary', type: 'button', onclick: () => m.close() }, 'Close'),
+  });
 }
 
 function publishingPanel() {
@@ -198,6 +221,7 @@ function publishingPanel() {
           icon(event.is_published ? 'eye-off' : 'eye', 18), event.is_published ? 'Unpublish' : event.state === 'scheduled' ? 'Publish now' : 'Publish now')),
       h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Schedule'),
         h('p', { class: 'hint' }, 'Times are in Nairobi time (EAT). Checked every minute.'),
+        event.is_published ? h('p', { class: 'hint' }, 'The event is live now, so only a time to go offline can be set.') : null,
         event.is_published ? null : scheduleRow('publish_at'), scheduleRow('unpublish_at'))),
     h('div', { class: 'stack' },
       h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Share link'), h('p', { class: 'hint' }, 'The same link keeps working across unpublish and publish.'), linkBox),

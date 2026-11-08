@@ -31,13 +31,26 @@ function toggleTheme() {
   try { localStorage.setItem('myfiles.theme', next); } catch { /* ignore */ }
 }
 
+// Cover: the small preview shows instantly, then the full-quality photo fades in on top of it.
+// object-position uses the area the host chose, so the right part of the photo stays visible.
+function coverImages(c) {
+  const pos = `${c.pos_x ?? 50}% ${c.pos_y ?? 50}%`;
+  const low = h('img', { class: 'hero-img', src: c.thumbnail_url, alt: '', decoding: 'async', style: `object-position:${pos}` });
+  if (!c.image_url) return [low];
+  const full = h('img', { class: 'hero-img full', alt: '', decoding: 'async', style: `object-position:${pos}` });
+  full.onload = () => { full.classList.add('ready'); };
+  full.onerror = () => full.remove(); // keep the preview if the full photo cannot load
+  full.src = c.image_url;
+  return [low, full];
+}
+
 function hero(ev) {
-  const cover = ev.cover && ev.cover.thumbnail_url;
+  const c = ev.cover && (ev.cover.thumbnail_url || ev.cover.image_url) ? ev.cover : null;
   const desc = ev.description ? h('p', { class: 'hero-desc clamp' }, ev.description) : null;
   const more = ev.description && ev.description.length > 160
     ? h('button', { class: 'hero-more', type: 'button', onclick: (e) => { const open = desc.classList.toggle('clamp'); e.currentTarget.textContent = open ? 'Read more' : 'Show less'; } }, 'Read more') : null;
-  return h('header', { class: `hero${cover ? ' has-cover' : ''}` },
-    cover ? h('img', { class: 'hero-img', src: cover, alt: '', decoding: 'async' }) : null,
+  return h('header', { class: `hero${c ? ' has-cover' : ''}` },
+    c ? coverImages(c.thumbnail_url ? c : { ...c, thumbnail_url: c.image_url }) : null,
     h('button', { class: 'btn icon ghost hero-theme', type: 'button', 'aria-label': 'Toggle dark mode', onclick: toggleTheme }, icon('moon')),
     h('div', { class: 'hero-in' },
       h('h1', null, ev.title),

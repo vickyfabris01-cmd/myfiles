@@ -4,6 +4,10 @@ import { presign } from './r2.js';
 import { LIMITS } from './config.js';
 import { chunk, clampInt } from './utils.js';
 
+// photos up to this size are used at full quality for the big cover banner (bigger ones fall back to the thumbnail)
+const HERO_MAX_BYTES = 12 * 1024 * 1024;
+const pct = (n) => (Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 50);
+
 export const FILE_COLS =
   'id,event_id,folder_id,original_filename,media_type,mime_type,size_bytes,width,height,duration_seconds,thumbnail_key,status,created_at';
 
@@ -65,7 +69,7 @@ export async function queryFiles(db, { eventId, folderId, p }) {
 export async function fileInfoMap(db, ids) {
   const map = new Map();
   for (const part of chunk(ids, 100)) {
-    const rows = await db.select('media_files', { select: 'id,thumbnail_key,media_type', id: `in.(${part.join(',')})` });
+    const rows = await db.select('media_files', { select: 'id,thumbnail_key,media_type,object_key,size_bytes', id: `in.(${part.join(',')})` });
     rows.forEach((r) => map.set(r.id, r));
   }
   return map;
@@ -76,18 +80,37 @@ async function toThumb(env, fileId, info) {
   return { file_id: fileId, media_type: r ? r.media_type : null, thumbnail_url: await thumbUrl(env, r && r.thumbnail_key) };
 }
 
-export async function coverFor(env, db, fileId) {
+// Event cover for the public page. image_url = the original photo (sharp on wide screens); thumbnail_url shows first.
+// pos_x / pos_y = the part of the photo the admin chose to keep visible (only for a manually chosen cover).
+export async function coverFor(env, db, fileId, pos = null) {
   if (!fileId) return null;
   const info = await fileInfoMap(db, [fileId]);
-  return toThumb(env, fileId, info);
+  const out = await toThumb(env, fileId, info);
+  const r = info.get(fileId);
+  out.image_url = r && r.media_type === 'photo' && r.object_key && r.size_bytes <= HERO_MAX_BYTES
+    ? await presign(env, 'GET', r.object_key, { stable: true }) : null;
+  out.pos_x = pos ? pct(pos.x) : 50;
+  out.pos_y = pos ? pct(pos.y) : 50;
+  return out;
 }
 
 // Folder card = prominent cover + two other recent previews.
 export async function shapeFolderCards(env, db, cards, admin = false) {
   const ids = [...new Set(cards.flatMap((c) => [c.resolved_cover_id, ...(c.recent_file_ids || [])]).filter(Boolean))];
   const info = await fileInfoMap(db, ids);
+  const pos = new Map();
+  for (const part of chunk(cards.map((c) => c.id), 100)) {
+    if (!part.length) continue;
+    const rows = await db.select('media_folders', { select: 'id,cover_pos_x,cover_pos_y', id: `in.(${part.join(',')})` });
+    rows.forEach((r) => pos.set(r.id, r));
+  }
   return Promise.all(cards.map(async (c) => {
     const cover = c.resolved_cover_id ? await toThumb(env, c.resolved_cover_id, info) : null;
+    if (cover) {
+      const p = c.cover_mode === 'manual' ? pos.get(c.id) : null;
+      cover.pos_x = p ? pct(p.cover_pos_x) : 50;
+      cover.pos_y = p ? pct(p.cover_pos_y) : 50;
+    }
     const previews = [];
     for (const fid of c.recent_file_ids || []) {
       if (fid === c.resolved_cover_id || previews.length >= 2) continue;

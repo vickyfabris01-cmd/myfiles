@@ -76,6 +76,12 @@ export async function update({ request, db, params }) {
     }
     patch.cover_file_id = fid;
   }
+  if ('cover_pos_x' in b) patch.cover_pos_x = v.num(b.cover_pos_x, 'cover_pos_x', { min: 0, max: 100 });
+  if ('cover_pos_y' in b) patch.cover_pos_y = v.num(b.cover_pos_y, 'cover_pos_y', { min: 0, max: 100 });
+  if (patch.cover_file_id && patch.cover_file_id !== cur.cover_file_id) {
+    if (!('cover_pos_x' in patch)) patch.cover_pos_x = 50;
+    if (!('cover_pos_y' in patch)) patch.cover_pos_y = 50;
+  }
   const mode = patch.cover_mode ?? cur.cover_mode;
   const cover = 'cover_file_id' in patch ? patch.cover_file_id : cur.cover_file_id;
   if (mode === 'manual' && !cover) throw new ApiError(400, 'VALIDATION_ERROR', 'Choose a cover file for manual cover mode');

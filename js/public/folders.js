@@ -2,7 +2,7 @@
 import { h, mount } from '../util.js';
 import { icon } from '../icons.js';
 
-const img = (t) => (t && t.thumbnail_url ? h('img', { src: t.thumbnail_url, alt: '', loading: 'lazy', decoding: 'async' }) : null);
+const img = (t) => (t && t.thumbnail_url ? h('img', { src: t.thumbnail_url, alt: '', loading: 'lazy', decoding: 'async', style: t.pos_x != null ? `object-position:${t.pos_x}% ${t.pos_y}%` : undefined }) : null);
 
 export function renderCrumbs(host, { eventTitle, crumbs, searching, onOpen }) {
   const items = [{ id: null, name: eventTitle || 'All files' }, ...crumbs];

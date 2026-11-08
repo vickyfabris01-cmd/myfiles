@@ -5,8 +5,9 @@ import { h, mount, clear, formatBytes, formatDuration, formatDateTime, debounce 
 import { icon } from '../icons.js';
 import { toast, showError, formDialog, confirmDialog, actionSheet, openModal, loading, emptyState, withBusy } from '../ui.js';
 import { CONFIG } from '../config.js';
+import { positionCover } from './cover-position.js';
 
-const thumbImg = (t) => (t && t.thumbnail_url ? h('img', { src: t.thumbnail_url, alt: '', loading: 'lazy', decoding: 'async' }) : null);
+const thumbImg = (t) => (t && t.thumbnail_url ? h('img', { src: t.thumbnail_url, alt: '', loading: 'lazy', decoding: 'async', style: t.pos_x != null ? `object-position:${t.pos_x}% ${t.pos_y}%` : undefined }) : null);
 
 /* ---------- folder picker (used for Move and for choosing the upload destination) ---------- */
 export function pickFolder({ eventId, startFolderId = null, title = 'Choose a folder', confirmLabel = 'Select this folder', excludeId = null }) {
@@ -132,6 +133,7 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
       { label: 'Open', icon: 'folder', onClick: () => openFolder(f.id) },
       { label: 'Rename', icon: 'edit', onClick: () => renameFolder(f) },
       { label: 'Move', icon: 'move', onClick: () => moveFolder(f) },
+      f.cover_mode === 'manual' && f.cover && f.cover.thumbnail_url ? { label: 'Adjust cover position', icon: 'move', hint: 'Drag to choose the visible area', onClick: () => adjustFolderCover(f) } : null,
       f.cover_mode === 'manual' ? { label: 'Use automatic cover', icon: 'refresh', hint: 'Newest photo or video', onClick: () => act(() => patch(`/admin/folders/${f.id}`, { cover_mode: 'auto' }), 'Cover is now automatic') } : null,
       { label: 'Delete folder', icon: 'trash', danger: true, onClick: () => deleteFolder(f) },
     ]);
@@ -263,13 +265,28 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
   }
 
   // Cover targets: the event, plus every folder in the current path when the file sits directly in the current folder.
+  // After choosing where, a window opens to drag the photo so only the wanted area shows.
   function setCover(f) {
     if (f.status !== 'ready') { toast('Only finished uploads can be used as a cover', 'error'); return; }
-    const items = [{ label: 'Event cover', icon: 'star', hint: event.title, onClick: () => act(() => patch(`/admin/events/${eventId}`, { cover_mode: 'manual', cover_file_id: f.id }), 'Event cover updated') }];
+    if (f.media_type === 'video' && !f.thumbnail_url) { toast('This video has no preview image to use as a cover', 'error'); return; }
+    const items = [{ label: 'Event cover', icon: 'star', hint: event.title, onClick: () => pickAndSave(f, 'event', `/admin/events/${eventId}`, 'Event cover updated') }];
     if (f.folder_id && f.folder_id === S.folderId) {
-      for (const c of S.crumbs.slice().reverse()) items.push({ label: `Folder cover: ${c.name}`, icon: 'folder', onClick: () => act(() => patch(`/admin/folders/${c.id}`, { cover_mode: 'manual', cover_file_id: f.id }), `Cover of "${c.name}" updated`) });
+      for (const c of S.crumbs.slice().reverse()) items.push({ label: `Folder cover: ${c.name}`, icon: 'folder', onClick: () => pickAndSave(f, 'folder', `/admin/folders/${c.id}`, `Cover of "${c.name}" updated`) });
     }
     actionSheet('Set as cover for', items);
+  }
+
+  async function pickAndSave(f, kind, path, okMsg) {
+    if (!f.thumbnail_url) { act(() => patch(path, { cover_mode: 'manual', cover_file_id: f.id }), okMsg); return; }
+    const p = await positionCover({ src: f.thumbnail_url, kind, title: kind === 'event' ? 'Position event cover' : 'Position folder cover' });
+    if (!p) return;
+    act(() => patch(path, { cover_mode: 'manual', cover_file_id: f.id, cover_pos_x: p.x, cover_pos_y: p.y }), okMsg);
+  }
+
+  async function adjustFolderCover(f) {
+    const p = await positionCover({ src: f.cover.thumbnail_url, kind: 'folder', x: f.cover.pos_x, y: f.cover.pos_y, title: `Position cover of "${f.name}"` });
+    if (!p) return;
+    act(() => patch(`/admin/folders/${f.id}`, { cover_pos_x: p.x, cover_pos_y: p.y }), 'Cover position saved');
   }
 
   async function act(fn, okMsg, mapErr) {

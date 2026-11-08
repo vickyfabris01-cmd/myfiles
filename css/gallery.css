@@ -8,8 +8,10 @@ body.public { background: var(--bg); }
 
 /* hero */
 .hero { position: relative; overflow: hidden; color: var(--text); background: linear-gradient(135deg, var(--accent-soft), var(--surface-2)); padding: calc(28px + env(safe-area-inset-top, 0px)) 16px 28px; }
-.hero.has-cover { color: #fff; min-height: 280px; display: flex; align-items: flex-end; background: #111; }
-.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(2px) saturate(1.1); transform: scale(1.05); }
+.hero.has-cover { color: #fff; display: flex; align-items: flex-end; background: #111; }
+.hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.hero-img.full { opacity: 0; transition: opacity .5s ease; } .hero-img.full.ready { opacity: 1; }
+.hero.has-cover { min-height: clamp(260px, 38vw, 460px); }
 .hero.has-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.25), rgba(0,0,0,.72)); }
 .hero-in { position: relative; z-index: 1; max-width: 1280px; width: 100%; margin: 0 auto; padding: 0 4px; display: flex; flex-direction: column; gap: 8px; }
 .hero h1 { font-size: clamp(1.7rem, 5vw, 2.8rem); line-height: 1.1; letter-spacing: -.03em; overflow-wrap: anywhere; }

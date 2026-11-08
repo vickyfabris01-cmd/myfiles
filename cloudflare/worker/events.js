@@ -17,6 +17,11 @@ function stateOf(e) {
 async function shapeEvents(env, db, rows) {
   const ids = [...new Set(rows.map((r) => r.resolved_cover_id).filter(Boolean))];
   const info = await fileInfoMap(db, ids);
+  const pos = new Map();
+  for (const part of chunk(rows.map((r) => r.id), 100)) {
+    if (!part.length) continue;
+    (await db.select('events', { select: 'id,cover_pos_x,cover_pos_y', id: `in.(${part.join(',')})` })).forEach((p) => pos.set(p.id, p));
+  }
   return Promise.all(rows.map(async (r) => {
     const cover = r.resolved_cover_id ? info.get(r.resolved_cover_id) : null;
     return {
@@ -32,6 +37,8 @@ async function shapeEvents(env, db, rows) {
       cover_mode: r.cover_mode,
       cover_file_id: r.cover_file_id,
       cover_url: await thumbUrl(env, cover && cover.thumbnail_key),
+      cover_pos_x: pos.has(r.id) ? pos.get(r.id).cover_pos_x : 50,
+      cover_pos_y: pos.has(r.id) ? pos.get(r.id).cover_pos_y : 50,
       file_count: r.file_count,
       total_bytes: r.total_bytes,
       deleted_at: r.deleted_at,
@@ -103,6 +110,13 @@ export async function update({ request, env, db, params }) {
       const [f] = await db.select('media_files', { select: 'id', id: `eq.${patch.cover_file_id}`, event_id: `eq.${cur.id}`, status: 'eq.ready', limit: 1 });
       if (!f) throw new ApiError(400, 'VALIDATION_ERROR', 'cover_file_id must be a finished file of this event');
     }
+  }
+  if ('cover_pos_x' in b) patch.cover_pos_x = v.num(b.cover_pos_x, 'cover_pos_x', { min: 0, max: 100 });
+  if ('cover_pos_y' in b) patch.cover_pos_y = v.num(b.cover_pos_y, 'cover_pos_y', { min: 0, max: 100 });
+  // a different cover photo starts centred unless the request says where
+  if (patch.cover_file_id && patch.cover_file_id !== cur.cover_file_id) {
+    if (!('cover_pos_x' in patch)) patch.cover_pos_x = 50;
+    if (!('cover_pos_y' in patch)) patch.cover_pos_y = 50;
   }
   const mode = patch.cover_mode ?? cur.cover_mode;
   const cover = 'cover_file_id' in patch ? patch.cover_file_id : cur.cover_file_id;

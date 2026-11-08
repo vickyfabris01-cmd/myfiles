@@ -24,6 +24,8 @@ create table events (
   unpublish_at     timestamptz,
   cover_mode       text not null default 'auto' check (cover_mode in ('auto','manual')),
   cover_file_id    uuid,
+  cover_pos_x      real not null default 50 check (cover_pos_x between 0 and 100),  -- which part of the cover to show (%)
+  cover_pos_y      real not null default 50 check (cover_pos_y between 0 and 100),
   deleted_at       timestamptz,            -- set = pending deletion
   purge_after      timestamptz,            -- deleted_at + 7 days
   purge_attempts   int not null default 0,
@@ -45,6 +47,8 @@ create table media_folders (
   name          text not null check (length(name) between 1 and 150),
   cover_mode    text not null default 'auto' check (cover_mode in ('auto','manual')),
   cover_file_id uuid,
+  cover_pos_x   real not null default 50 check (cover_pos_x between 0 and 100),
+  cover_pos_y   real not null default 50 check (cover_pos_y between 0 and 100),
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
