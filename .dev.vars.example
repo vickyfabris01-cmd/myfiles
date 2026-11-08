@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `npx wrangler dev`. Never commit .dev.vars.
+SUPABASE_SERVICE_KEY=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+TOKEN_ENC_KEY=
