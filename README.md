@@ -10,3 +10,4 @@ See docs/admin-ui.md. Before deploying, put your API URL, Supabase URL and publi
 Share links show a preview image (cover + two latest photos) in chat apps, see "Link previews" in docs/public-gallery.md.
 See docs/public-gallery.md. Share links are `https://<your-site>/e/<TOKEN>`.
 
+
