@@ -97,7 +97,7 @@ export async function remove({ env, db, params }) {
   const folderIds = await db.rpc('folder_subtree', { p_folder: cur.id });
   const files = [];
   for (const ids of chunk(folderIds, 100)) {
-    files.push(...await db.select('media_files', { select: 'id,event_id,object_key', folder_id: `in.(${ids.join(',')})` }));
+    files.push(...await db.select('media_files', { select: 'id,event_id,object_key,thumbnail_key', folder_id: `in.(${ids.join(',')})` }));
   }
   await purgeFiles(env, db, files);
   await db.remove('media_folders', { id: `eq.${cur.id}` });

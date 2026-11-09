@@ -100,8 +100,9 @@ Files for a download queue (no URLs). `scope=event` = whole event. `scope=folder
 | PATCH | /admin/files/:id | `folder_id` (move, null = event level), `filename` | `{ file }` |
 | DELETE | /admin/files/:id | | `{ deleted_file_id }` |
 | POST | /admin/files/bulk | `{ action: "move"\|"delete", file_ids (max 200), folder_id? }` | `{ moved }` or `{ deleted }` |
-| POST | /admin/files/:id/thumbnail | | `{ upload_url, content_type }` PUT a JPEG (max 2 MB) |
-| POST | /admin/files/:id/thumbnail/confirm | | `{ file_id, thumbnail_key }` |
+| POST | /admin/files/:id/thumbnail | | `{ upload_url, content_type, key }` PUT a JPEG (max 2 MB). Every call returns a new `key` |
+| POST | /admin/files/:id/thumbnail/confirm | `{ key }` | `{ file_id, thumbnail_key }` sets the thumbnail and deletes the one it replaces. Without `key` it confirms the upload's original thumbnail |
+| GET | /admin/files/:id/source | | `{ url, media_type }` signed link (1 hour) to the original, used to scrub a video and pick a frame |
 
 Cover rules: `auto` = newest ready file that has a thumbnail. `manual` = the chosen file. If a manual cover is deleted, the cover falls back to auto.
 

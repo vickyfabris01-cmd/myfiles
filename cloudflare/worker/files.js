@@ -5,7 +5,7 @@ import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign } from './r2.js';
 import { purgeFiles } from './storage.js';
 
-const COLS = 'id,event_id,folder_id,original_filename,object_key,status';
+const COLS = 'id,event_id,folder_id,original_filename,object_key,thumbnail_key,media_type,status';
 
 async function getFile(db, id) {
   const [f] = await db.select('media_files', { select: COLS, id: `eq.${v.uuid(id, 'id')}`, limit: 1 });
@@ -67,23 +67,47 @@ export async function bulk({ request, env, db }) {
   return { deleted: ids.length };
 }
 
-// Fresh presigned PUT for a missing or regenerated thumbnail.
+// Fresh presigned PUT for a missing or replaced thumbnail. Each call gets its own key so a replaced thumbnail
+// is never served from a browser or CDN cache. Send the returned `key` to /thumbnail/confirm.
 export async function thumbnailUrl({ env, db, params }) {
   const f = await getFile(db, params.id);
+  const tag = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const key = OBJECT_KEYS.thumbV(f.event_id, f.id, tag);
   return {
-    upload_url: await presign(env, 'PUT', OBJECT_KEYS.thumb(f.event_id, f.id), { expires: LIMITS.UPLOAD_URL_SECONDS }),
+    upload_url: await presign(env, 'PUT', key, { expires: LIMITS.UPLOAD_URL_SECONDS }),
     content_type: 'image/jpeg',
+    key,
   };
 }
 
-export async function thumbnailConfirm({ env, db, params }) {
+// POST /admin/files/:id/thumbnail/confirm  { key? }   (no key = the original upload's canonical thumbnail key)
+export async function thumbnailConfirm({ request, env, db, params }) {
   const f = await getFile(db, params.id);
-  const key = OBJECT_KEYS.thumb(f.event_id, f.id);
+  const b = await readJson(request);
+  const canonical = OBJECT_KEYS.thumb(f.event_id, f.id);
+  let key = canonical;
+  if (b.key !== undefined && b.key !== null) {
+    const ok = typeof b.key === 'string' && b.key.startsWith(`events/${f.event_id}/thumbs/${f.id}-`) &&
+      /^events\/[0-9a-f-]{36}\/thumbs\/[0-9a-f-]{36}-[0-9a-f]{8}\.jpg$/.test(b.key);
+    if (!ok) throw new ApiError(400, 'VALIDATION_ERROR', 'key is not valid for this file');
+    key = b.key;
+  }
   const h = await env.BUCKET.head(key);
   if (!h || h.size === 0 || h.size > LIMITS.MAX_THUMB_BYTES) {
     if (h) await env.BUCKET.delete(key);
     throw new ApiError(409, 'THUMBNAIL_MISSING', `Thumbnail not found or larger than ${LIMITS.MAX_THUMB_BYTES} bytes`);
   }
   await db.update('media_files', { id: `eq.${f.id}` }, { thumbnail_key: key });
+  // the thumbnail it replaces is no longer referenced
+  if (f.thumbnail_key && f.thumbnail_key !== key) {
+    try { await env.BUCKET.delete(f.thumbnail_key); } catch { /* harmless leftover, removed with the event */ }
+  }
   return { file_id: f.id, thumbnail_key: key };
+}
+
+// GET /admin/files/:id/source  ->  { url }  Short-lived link to the original, so the admin can scrub a video to pick a thumbnail.
+export async function sourceUrl({ env, db, params }) {
+  const f = await getFile(db, params.id);
+  if (f.status !== 'ready') throw new ApiError(409, 'NOT_READY', 'This upload has not finished');
+  return { url: await presign(env, 'GET', f.object_key, { expires: 3600 }), media_type: f.media_type };
 }

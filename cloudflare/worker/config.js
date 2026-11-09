@@ -27,5 +27,7 @@ export const RATE = {            // requests per minute per IP (best effort, per
 export const OBJECT_KEYS = {
   original: (eventId, fileId) => `events/${eventId}/originals/${fileId}`,
   thumb: (eventId, fileId) => `events/${eventId}/thumbs/${fileId}.jpg`,
+  // a hand-picked thumbnail gets a fresh key so browsers, caches and the share-preview collage all see the change
+  thumbV: (eventId, fileId, tag) => `events/${eventId}/thumbs/${fileId}-${tag}.jpg`,
   prefix: (eventId) => `events/${eventId}/`,
 };

@@ -162,7 +162,7 @@ export class UploadManager {
       thumbDone = this.put(info.thumbnail_upload_url, meta.blob, { contentType: 'image/jpeg', signal })
         .catch((e) => { if (isAbort(e)) throw e; item.warning = 'Preview could not be uploaded'; });
       thumbDone.catch(() => {});
-    } else item.warning = 'No preview for this file type';
+    } else item.warning = item.kind === 'video' ? 'No thumbnail made. Choose one later from the video\'s details' : 'No preview for this file type';
 
     const multipart = info.mode === 'multipart';
     let singleUrl = info.upload_url;

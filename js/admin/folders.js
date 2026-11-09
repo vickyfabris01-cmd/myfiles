@@ -6,6 +6,7 @@ import { icon } from '../icons.js';
 import { toast, showError, formDialog, confirmDialog, actionSheet, openModal, loading, emptyState, withBusy } from '../ui.js';
 import { CONFIG } from '../config.js';
 import { positionCover } from './cover-position.js';
+import { pickVideoThumbnail } from './video-thumb.js';
 
 const thumbImg = (t) => (t && t.thumbnail_url ? h('img', { src: t.thumbnail_url, alt: '', loading: 'lazy', decoding: 'async', style: t.pos_x != null ? `object-position:${t.pos_x}% ${t.pos_y}%` : undefined }) : null);
 
@@ -220,6 +221,7 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
       h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Clear selection', onclick: () => { S.selected.clear(); renderFiles(); renderSelbar(); } }, icon('x')),
       h('b', { class: 'grow' }, `${n} selected`),
       n === 1 ? h('button', { class: 'btn secondary sm', type: 'button', onclick: () => setCover(files[0]) }, icon('star', 16), 'Cover') : null,
+      n === 1 && files[0].media_type === 'video' && files[0].status === 'ready' ? h('button', { class: 'btn secondary sm', type: 'button', onclick: () => setVideoThumb(files[0]) }, icon('video', 16), 'Thumbnail') : null,
       h('button', { class: 'btn secondary sm', type: 'button', onclick: () => moveFiles(files) }, icon('move', 16), 'Move'),
       h('button', { class: 'btn danger sm', type: 'button', onclick: () => deleteFiles(files) }, icon('trash', 16), 'Delete'));
   }
@@ -235,10 +237,27 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
         f.status !== 'ready' ? h('p', { class: 'banner warn flat' }, icon('info', 18), h('span', null, 'This upload did not finish. Visitors cannot see it. Delete it and upload again.')) : null),
       footer: S.ro ? null : [
         f.status === 'ready' ? h('button', { class: 'btn secondary', type: 'button', onclick: () => { m.close(); setCover(f); } }, icon('star', 18), 'Set as cover') : null,
+        f.status === 'ready' && f.media_type === 'video' ? h('button', { class: 'btn secondary', type: 'button', onclick: () => { m.close(); setVideoThumb(f); } }, icon('video', 18), f.thumbnail_url ? 'Change thumbnail' : 'Choose thumbnail') : null,
         h('button', { class: 'btn secondary', type: 'button', onclick: () => { m.close(); renameFile(f); } }, icon('edit', 18), 'Rename'),
         h('button', { class: 'btn secondary', type: 'button', onclick: () => { m.close(); moveFiles([f]); } }, icon('move', 18), 'Move'),
         h('button', { class: 'btn danger', type: 'button', onclick: () => { m.close(); deleteFiles([f]); } }, icon('trash', 18), 'Delete')],
     });
+  }
+
+  // Slide through the video, pick a frame, upload it as the thumbnail (replaces the current one).
+  async function setVideoThumb(f) {
+    let src;
+    try { src = (await get(`/admin/files/${f.id}/source`)).url; } catch (e) { showError(e); return; }
+    const blob = await pickVideoThumbnail({ src, duration: f.duration_seconds, title: `Thumbnail for ${f.filename}` });
+    if (!blob) return;
+    await act(async () => {
+      const info = await post(`/admin/files/${f.id}/thumbnail`);
+      let res;
+      try { res = await fetch(info.upload_url, { method: 'PUT', headers: { 'Content-Type': info.content_type || 'image/jpeg' }, body: blob }); }
+      catch { throw new Error('Could not reach storage. Check your connection and try again.'); }
+      if (!res.ok) throw new Error(`Storage refused the thumbnail (${res.status})`);
+      await post(`/admin/files/${f.id}/thumbnail/confirm`, { key: info.key });
+    }, 'Thumbnail updated');
   }
 
   async function renameFile(f) {
@@ -268,7 +287,7 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
   // After choosing where, a window opens to drag the photo so only the wanted area shows.
   function setCover(f) {
     if (f.status !== 'ready') { toast('Only finished uploads can be used as a cover', 'error'); return; }
-    if (f.media_type === 'video' && !f.thumbnail_url) { toast('This video has no preview image to use as a cover', 'error'); return; }
+    if (f.media_type === 'video' && !f.thumbnail_url) { toast('This video has no thumbnail yet. Open it and choose a thumbnail first.', 'error'); return; }
     const items = [{ label: 'Event cover', icon: 'star', hint: event.title, onClick: () => pickAndSave(f, 'event', `/admin/events/${eventId}`, 'Event cover updated') }];
     if (f.folder_id && f.folder_id === S.folderId) {
       for (const c of S.crumbs.slice().reverse()) items.push({ label: `Folder cover: ${c.name}`, icon: 'folder', onClick: () => pickAndSave(f, 'folder', `/admin/folders/${c.id}`, `Cover of "${c.name}" updated`) });

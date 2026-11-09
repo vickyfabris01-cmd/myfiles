@@ -214,7 +214,7 @@ export async function abort({ request, env, db }) {
   const b = await readJson(request);
   const s = await getSession(db, b.session_id);
   if (s.status === 'completed') throw new ApiError(409, 'ALREADY_COMPLETED', 'Upload already completed. Delete the file instead.');
-  const files = await db.select('media_files', { select: 'id,event_id,object_key', id: `eq.${s.file_id}` });
+  const files = await db.select('media_files', { select: 'id,event_id,object_key,thumbnail_key', id: `eq.${s.file_id}` });
   await purgeFiles(env, db, files);
   await db.remove('media_files', { id: `eq.${s.file_id}` }); // cascades the session
   return { aborted: true };

@@ -52,6 +52,7 @@ const ROUTES = [
   ['POST', '/admin/files/bulk', 'admin', true, fi.bulk],
   ['PATCH', '/admin/files/:id', 'admin', true, fi.update],
   ['DELETE', '/admin/files/:id', 'admin', true, fi.remove],
+  ['GET', '/admin/files/:id/source', 'admin', true, fi.sourceUrl],
   ['POST', '/admin/files/:id/thumbnail', 'admin', true, fi.thumbnailUrl],
   ['POST', '/admin/files/:id/thumbnail/confirm', 'admin', true, fi.thumbnailConfirm],
 

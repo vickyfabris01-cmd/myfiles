@@ -125,3 +125,13 @@ dialog.modal.cover-pos { width: min(720px, calc(100vw - 24px)); }
 .cp-phone-row { display: flex; align-items: center; gap: 12px; }
 .cp-phone { position: relative; width: 90px; aspect-ratio: 9 / 14; border-radius: 12px; overflow: hidden; background: var(--surface-2); border: 2px solid var(--line); flex: none; }
 .cover img.pos { object-position: var(--pos, 50% 50%); }
+
+/* choose a video thumbnail */
+dialog.modal.vt { width: min(640px, calc(100vw - 24px)); }
+.vt-stage { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; }
+.vt-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.vt-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; color: #fff; background: rgba(0,0,0,.55); }
+.vt-status[hidden] { display: none; }
+.vt-controls { display: flex; flex-direction: column; gap: 10px; }
+.vt-range { width: 100%; height: 36px; accent-color: var(--accent); cursor: pointer; }
+.vt-time { font-variant-numeric: tabular-nums; font-weight: 600; }

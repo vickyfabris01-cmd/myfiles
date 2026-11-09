@@ -5,7 +5,7 @@
 /admin/*
   X-Frame-Options: DENY
   Cache-Control: no-store
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; connect-src 'self' https://*.supabase.co https://*.workers.dev https://*.r2.cloudflarestorage.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; media-src 'self' blob: https://*.r2.cloudflarestorage.com; connect-src 'self' https://*.supabase.co https://*.workers.dev https://*.r2.cloudflarestorage.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 /e/*
   X-Frame-Options: DENY

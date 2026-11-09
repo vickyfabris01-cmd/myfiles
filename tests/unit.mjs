@@ -1,6 +1,7 @@
 // tests/unit.mjs  -  no network or database needed:  node tests/unit.mjs
 import worker from '../cloudflare/worker/index.js';
 import { signUrl } from '../cloudflare/worker/r2.js';
+import * as fi from '../cloudflare/worker/files.js';
 import { pickFiles, layoutFor, sourceKey, OG_W, OG_H } from '../cloudflare/worker/og.js';
 import { generateToken, hashToken, encryptToken, decryptToken } from '../cloudflare/worker/tokens.js';
 
@@ -64,6 +65,25 @@ const pv = await req('GET', '/event/nope/preview');
 check('preview route: malformed token -> 404 EVENT_UNAVAILABLE without DB access', pv.status === 404 && (await pv.json()).error.code === 'EVENT_UNAVAILABLE');
 const pi = await req('GET', '/event/nope/og.jpg');
 check('preview image route: malformed token -> 404 JSON, not an image', pi.status === 404 && /json/.test(pi.headers.get('Content-Type')));
+
+// hand-picked video thumbnails: fresh key per upload, strict key validation, old thumbnail removed, source link for scrubbing
+{
+  const E = '11111111-1111-4111-8111-111111111111', F = '22222222-2222-4222-8222-222222222222';
+  const row = { id: F, event_id: E, folder_id: null, original_filename: 'a.mp4', object_key: `events/${E}/originals/${F}.mp4`, thumbnail_key: `events/${E}/thumbs/${F}.jpg`, media_type: 'video', status: 'ready' };
+  const deleted = []; const updates = [];
+  const fakeDb = { select: async () => [row], update: async (_t, _w, patch) => { updates.push(patch); return [{ ...row, ...patch }]; } };
+  const envT = { ...env, BUCKET: { head: async (k) => ({ size: 5000, key: k }), delete: async (k) => { deleted.push(k); } } };
+  const u = await fi.thumbnailUrl({ env: envT, db: fakeDb, params: { id: F } });
+  check('thumbnail: each request gets a fresh versioned key', /\/thumbs\/2{8}-2{4}-4222-8222-2{12}-[0-9a-f]{8}\.jpg$/.test(u.key) && u.upload_url.includes('X-Amz-Signature'));
+  const mk = (body) => new Request('https://x/y', { method: 'POST', body: JSON.stringify(body) });
+  const ok = await fi.thumbnailConfirm({ request: mk({ key: u.key }), env: envT, db: fakeDb, params: { id: F } });
+  check('thumbnail: confirm stores the new key and removes the old thumbnail', ok.thumbnail_key === u.key && updates.at(-1).thumbnail_key === u.key && deleted.includes(row.thumbnail_key));
+  let bad = null;
+  try { await fi.thumbnailConfirm({ request: mk({ key: `events/${E}/originals/${F}.mp4` }), env: envT, db: fakeDb, params: { id: F } }); } catch (e) { bad = e; }
+  check('thumbnail: confirm refuses a key that is not this file\'s thumbnail (cannot point at the original)', bad && bad.status === 400);
+  const src = await fi.sourceUrl({ env: envT, db: fakeDb, params: { id: F } });
+  check('source: admin gets a signed link to the original', src.url.includes(row.object_key) && src.url.includes('X-Amz-Signature'));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -32,32 +32,68 @@ async function imageThumb(file) {
   return { blob: await toBlob(canvas), width, height };
 }
 
+// Mean brightness (0-255) of a frame, from a tiny copy. Used to skip black opening frames.
+function brightness(video) {
+  try {
+    const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+    const g = c.getContext('2d'); g.drawImage(video, 0, 0, 16, 16);
+    const d = g.getImageData(0, 0, 16, 16).data; let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    return sum / (d.length / 4);
+  } catch { return 255; }
+}
+
+// Tries a few moments (a bit in, 25%, 50%, the start) and keeps the first frame that is not black.
 function videoThumb(file) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const v = document.createElement('video');
-    v.muted = true; v.playsInline = true; v.preload = 'metadata';
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
     const out = { blob: null, width: null, height: null, duration: null };
-    const done = () => { URL.revokeObjectURL(url); v.removeAttribute('src'); v.load(); resolve(out); };
-    const timer = setTimeout(done, 12000);
-    v.onerror = () => { clearTimeout(timer); done(); };
-    v.onloadedmetadata = () => {
+    let finished = false;
+    const done = () => {
+      if (finished) return; finished = true; clearTimeout(timer);
+      URL.revokeObjectURL(url); v.removeAttribute('src'); try { v.load(); } catch { /* ignore */ }
+      resolve(out);
+    };
+    const timer = setTimeout(done, 25000);
+    const once = (ev, ms) => new Promise((res) => {
+      const t = setTimeout(() => { v.removeEventListener(ev, f); res(false); }, ms);
+      const f = () => { clearTimeout(t); res(true); };
+      v.addEventListener(ev, f, { once: true });
+    });
+    const seekTo = async (t) => {
+      if (Math.abs(v.currentTime - t) < 0.02 && v.readyState >= 2) return true;
+      const waiting = once('seeked', 6000);
+      try { v.currentTime = t; } catch { return false; }
+      return waiting;
+    };
+    v.addEventListener('error', done);
+    v.addEventListener('loadedmetadata', async () => {
       out.width = v.videoWidth || null; out.height = v.videoHeight || null;
       out.duration = Number.isFinite(v.duration) ? v.duration : null;
-      v.currentTime = Math.min(1, (v.duration || 2) / 2);
-    };
-    v.onseeked = async () => {
-      try {
-        if (v.videoWidth) {
-          const [w, h] = fit(v.videoWidth, v.videoHeight);
-          const canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          canvas.getContext('2d').drawImage(v, 0, 0, w, h);
-          out.blob = await toBlob(canvas);
+      if (v.readyState < 2) await once('loadeddata', 8000);
+      const d = out.duration || 2;
+      const times = [...new Set([Math.min(1, d / 2), d * 0.25, d * 0.5, 0].map((t) => Math.max(0, Math.min(t, d - 0.05))))];
+      let best = null, bestLum = -1;
+      for (const t of times) {
+        if (finished) return;
+        if (!(await seekTo(t)) || !v.videoWidth) continue;
+        const lum = brightness(v);
+        if (lum > bestLum) {
+          try {
+            const [w, h] = fit(v.videoWidth, v.videoHeight);
+            const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(v, 0, 0, w, h);
+            const blob = await toBlob(canvas);
+            if (blob) { best = blob; bestLum = lum; }
+          } catch { /* try the next moment */ }
         }
-      } catch { /* leave blob null */ }
-      clearTimeout(timer); done();
-    };
+        if (bestLum > 24) break; // a real picture, stop here
+      }
+      out.blob = best; done();
+    });
     v.src = url;
   });
 }

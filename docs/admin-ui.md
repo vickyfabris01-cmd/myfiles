@@ -32,3 +32,8 @@ Plain HTML, CSS and ES modules. No framework, no build step, no CDN. Uses only t
 
 ## Security notes
 `_headers` adds a strict Content-Security-Policy for `/admin/*` (scripts and styles only from the site itself; network only to Supabase, workers.dev and R2). If you later use a custom domain for the Worker or R2, add it to `connect-src` and `img-src`. `Referrer-Policy: no-referrer` applies to the whole site so share-link tokens are never sent to other hosts.
+
+## Choosing a video thumbnail
+Open a video (tap it, then the file's details) and tap **Choose thumbnail** (or **Change thumbnail**), or select one video and tap **Thumbnail** in the bar. A window plays the video: slide to the moment you want, fine-tune with -1s / -0.1s / +0.1s / +1s, then **Use this frame**. The frame is saved as a JPEG of about 480 px and replaces the old thumbnail everywhere, including the share-link preview. The browser must be able to play the video (MP4 H.264 or WebM works everywhere; HEVC .mov only in some browsers). Needs the R2 bucket CORS from SETUP.md step 2.
+
+Automatic thumbnails at upload now wait for the first real frame, skip black opening frames and allow up to 25 seconds for large videos. If one still cannot be made, the upload list says so and you can choose one by hand afterwards.

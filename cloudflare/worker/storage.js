@@ -4,12 +4,12 @@ import { OBJECT_KEYS } from './config.js';
 import { chunk } from './utils.js';
 
 export async function deleteKeys(env, keys) {
-  for (const part of chunk([...new Set(keys)], 1000)) {
+  for (const part of chunk([...new Set(keys.filter(Boolean))], 1000)) {
     if (part.length) await env.BUCKET.delete(part);
   }
 }
 
-// files: rows with { id, event_id, object_key }. Aborts open multipart uploads, then removes originals + thumbnails.
+// files: rows with { id, event_id, object_key, thumbnail_key? }. Aborts open multipart uploads, then removes originals + thumbnails.
 export async function purgeFiles(env, db, files) {
   if (!files.length) return;
   const byId = new Map(files.map((f) => [f.id, f]));
@@ -25,5 +25,5 @@ export async function purgeFiles(env, db, files) {
       try { await env.BUCKET.resumeMultipartUpload(f.object_key, s.r2_upload_id).abort(); } catch { /* already gone */ }
     }
   }
-  await deleteKeys(env, files.flatMap((f) => [f.object_key, OBJECT_KEYS.thumb(f.event_id, f.id)]));
+  await deleteKeys(env, files.flatMap((f) => [f.object_key, OBJECT_KEYS.thumb(f.event_id, f.id), f.thumbnail_key]));
 }
