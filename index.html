@@ -2,44 +2,142 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>myfiles</title>
-  <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: #f6f7f9;
-      color: #1f2933;
-    }
-    main { text-align: center; padding: 24px; }
-    h1 { margin: 0 0 8px; font-size: 2rem; }
-    p { margin: 0 0 20px; color: #52606d; }
-    a {
-      display: inline-block;
-      padding: 10px 20px;
-      border-radius: 8px;
-      background: #1f2933;
-      color: #fff;
-      text-decoration: none;
-    }
-    @media (prefers-color-scheme: dark) {
-      body { background: #12161b; color: #e4e7eb; }
-      p { color: #9aa5b1; }
-      a { background: #e4e7eb; color: #12161b; }
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>MyFiles - share event photos and videos in original quality</title>
+  <meta name="description" content="Upload an event's photos and videos, publish them, and share one private link. Guests view and download the originals, no account needed.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MyFiles">
+  <meta property="og:title" content="MyFiles - share event photos and videos in original quality">
+  <meta property="og:description" content="One private link. Original quality. No accounts for guests.">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f5bd5'/%3E%3Cpath d='M9 21a4 4 0 0 1-.5-8A6 6 0 0 1 20 11.5a4.5 4.5 0 0 1 1 8.9' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/css/global.css">
+  <link rel="stylesheet" href="/css/landing.css">
 </head>
-<body>
+<body class="landing">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4m0 0-4 4m4-4 4 4M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c2.5 2.7 3.5 5.7 3.5 9s-1 6.3-3.5 9c-2.5-2.7-3.5-5.7-3.5-9s1-6.3 3.5-9z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12m0 0-4-4m4 4 4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M4 12h10a6 6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="m4 18 5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m0 0-5-5m5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="lp-bar">
+    <div class="lp-wrap lp-bar-in">
+      <a class="lp-brand" href="/" aria-label="MyFiles home">
+        <span class="lp-logo"><svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M9 21a4 4 0 0 1-.5-8A6 6 0 0 1 20 11.5a4.5 4.5 0 0 1 1 8.9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span>MyFiles</span>
+      </a>
+      <nav class="lp-nav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#guests">For guests</a>
+      </nav>
+      <div class="lp-actions">
+        <button class="btn icon ghost" id="theme" type="button" aria-label="Toggle dark mode"><svg class="ic" width="20" height="20"><use href="#i-moon"/></svg></button>
+        <a class="btn primary sm" id="signin" href="/admin/">Sign in</a>
+      </div>
+    </div>
+  </header>
+
   <main>
-    <h1>myfiles</h1>
-    <h2>Share your experience</h2>
-    <p>The site is live and setup is in progress.</p>
-    
-    <a href="/admin/">Go to admin</a>
+    <section class="lp-hero">
+      <div class="lp-wrap">
+        <p class="lp-eyebrow">Share your experience</p>
+        <h1>Your event photos and videos, shared in original quality.</h1>
+        <p class="lp-lead">Upload everything from the day, organise it into folders, publish it, and send guests one private link. They can browse and download the originals without creating an account.</p>
+
+        <div class="lp-doors">
+          <div class="card lp-door" id="host">
+            <span class="lp-door-ic"><svg class="ic" width="22" height="22"><use href="#i-lock"/></svg></span>
+            <h2>I am the host</h2>
+            <p class="muted">Sign in to upload, organise and publish your events.</p>
+            <a class="btn primary lg block" id="signin2" href="/admin/">Sign in <svg class="ic" width="18" height="18"><use href="#i-arrow"/></svg></a>
+            <p class="small muted">Host accounts are created by the site owner. There is no public sign-up.</p>
+          </div>
+
+          <form class="card lp-door" id="open" novalidate>
+            <span class="lp-door-ic"><svg class="ic" width="22" height="22"><use href="#i-link"/></svg></span>
+            <h2>I have a link</h2>
+            <p class="muted">Paste the link you were sent to open the event.</p>
+            <div class="field">
+              <label class="label" for="link">Event link</label>
+              <input class="input" id="link" name="link" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://.../e/...">
+              <p class="form-msg" id="link-err" role="alert"></p>
+            </div>
+            <button class="btn secondary lg block" type="submit">Open event <svg class="ic" width="18" height="18"><use href="#i-arrow"/></svg></button>
+            <p class="small muted">You can also just tap the link you received.</p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-sec" id="how">
+      <div class="lp-wrap">
+        <h2 class="lp-h2">How it works</h2>
+        <ol class="lp-steps">
+          <li class="card"><span class="lp-num">1</span><svg class="ic" width="24" height="24"><use href="#i-up"/></svg><h3>Upload</h3><p class="muted">Add photos and videos from your phone or computer. Big videos upload in parts and can resume if the connection drops.</p></li>
+          <li class="card"><span class="lp-num">2</span><svg class="ic" width="24" height="24"><use href="#i-folder"/></svg><h3>Organise</h3><p class="muted">Sort everything into nested folders and choose the cover that represents the event.</p></li>
+          <li class="card"><span class="lp-num">3</span><svg class="ic" width="24" height="24"><use href="#i-globe"/></svg><h3>Publish</h3><p class="muted">Publish now, or schedule when the event goes live and when it stops being shared.</p></li>
+          <li class="card"><span class="lp-num">4</span><svg class="ic" width="24" height="24"><use href="#i-link"/></svg><h3>Share one link</h3><p class="muted">Send the private link in any chat. It previews with the cover and the two latest photos.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="lp-sec lp-alt" id="features">
+      <div class="lp-wrap">
+        <h2 class="lp-h2">Everything in one place</h2>
+        <div class="lp-grid">
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-image"/></svg><h3>Original quality</h3><p class="muted">Files are stored and downloaded as uploaded. Nothing is recompressed.</p></article>
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-lock"/></svg><h3>Private by link</h3><p class="muted">Only people with the link can open an event. Unpublished or removed events reveal nothing.</p></article>
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-down"/></svg><h3>Flexible downloads</h3><p class="muted">Save one file, a selection, a folder or the whole event, one file at a time with progress.</p></article>
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-clock"/></svg><h3>Scheduled publishing</h3><p class="muted">Set a start and an end time. Times are shown in Nairobi time.</p></article>
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-undo"/></svg><h3>7-day recovery</h3><p class="muted">Deleted an event by mistake? Restore it within seven days.</p></article>
+          <article class="card"><svg class="ic" width="24" height="24"><use href="#i-moon"/></svg><h3>Made for phones</h3><p class="muted">Fast thumbnails, full-screen viewer with zoom and swipe, and a dark mode.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-sec" id="guests">
+      <div class="lp-wrap lp-split">
+        <div>
+          <h2 class="lp-h2">Got a link? You are all set.</h2>
+          <p class="muted">Open it and the gallery loads straight away. There is nothing to install and no account to create.</p>
+          <ul class="lp-list">
+            <li>Browse photos and videos in a clean grid, with search, filters and sorting.</li>
+            <li>Open any item full screen, zoom in and play videos.</li>
+            <li>Download the originals whenever you like.</li>
+          </ul>
+        </div>
+        <div class="card lp-cta">
+          <h3>Hosting an event?</h3>
+          <p class="muted">Sign in to create one, upload your files and get your share link.</p>
+          <a class="btn primary block" id="signin3" href="/admin/">Sign in</a>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <footer class="lp-foot">
+    <div class="lp-wrap lp-foot-in">
+      <span>MyFiles</span>
+      <span class="muted small">Private by link. Shared in original quality.</span>
+      <a class="small" href="/admin/">Host sign in</a>
+    </div>
+  </footer>
+
+  <noscript><p class="lp-wrap muted small" style="padding:16px 0">The "I have a link" box needs JavaScript. You can still open any event link directly.</p></noscript>
+  <script type="module" src="/js/landing.js"></script>
 </body>
 </html>
