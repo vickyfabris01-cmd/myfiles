@@ -5,6 +5,9 @@
   "main": "cloudflare/worker/index.js",
   "compatibility_date": "2025-09-01",
 
+  // builds the link-preview collage (cloudflare/worker/og.js). Without it the preview falls back to a single image.
+  "images": { "binding": "IMAGES" },
+
   "r2_buckets": [
     { "binding": "BUCKET", "bucket_name": "myfiles-media" }
   ],

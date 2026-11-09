@@ -6,6 +6,7 @@ import { makeDb } from './db.js';
 import { requireAdmin } from './auth.js';
 import * as pub from './public.js';
 import * as dl from './downloads.js';
+import * as og from './og.js';
 import * as ev from './events.js';
 import * as fo from './folders.js';
 import * as fi from './files.js';
@@ -23,6 +24,8 @@ const ROUTES = [
   ['GET', '/event/:token/files', 'public', false, pub.files],
   ['GET', '/event/:token/manifest', 'public', false, dl.manifest],
   ['POST', '/event/:token/download', 'download', false, dl.urls],
+  ['GET', '/event/:token/preview', 'public', false, og.preview],   // title/description/image for link previews
+  ['GET', '/event/:token/og.jpg', 'public', false, og.image],      // the preview collage (raw image)
 
   // admin: session
   ['GET', '/admin/me', 'admin', true, ({ admin }) => ({ admin })],
@@ -112,7 +115,7 @@ async function runScheduled(event, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, execCtx) {
     const cors = corsHeaders(env, request.headers.get('Origin'));
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
     try {
@@ -121,9 +124,10 @@ export default {
       if (!route) throw new ApiError(404, 'NOT_FOUND', 'Route not found');
       rateLimit(request, route.group, RATE[route.group]);
       const db = makeDb(env);
-      const ctx = { request, env, db, url, params: route.params };
+      const ctx = { request, env, db, url, params: route.params, waitUntil: execCtx && execCtx.waitUntil ? (p) => execCtx.waitUntil(p) : null };
       if (route.admin) ctx.admin = await requireAdmin(request, env, db);
       const out = await route.handler(ctx);
+      if (out instanceof Response) return out; // raw responses (images)
       const created = out instanceof Created;
       return send({ success: true, data: created ? out.data : out, error: null }, created ? 201 : 200, cors);
     } catch (err) {

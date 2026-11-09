@@ -59,6 +59,8 @@ Keep a private backup of `TOKEN_ENC_KEY`. If it is lost, visitors' links keep wo
 
 **CLI way (PC):** `npm install`, `npx wrangler login`, then `npx wrangler secret put SUPABASE_SERVICE_KEY` (and the other three), then `npx wrangler deploy`. Wrangler often does not run on Termux/Android (its runtime has no Android build), so use the dashboard way there.
 
+**Link preview collage:** `wrangler.jsonc` declares an `IMAGES` binding. Cloudflare Images transformations have a free monthly allowance; no extra setup is needed. If the binding is ever removed, previews fall back to a single image. Pages also deploys the `functions/` folder automatically on the next push.
+
 Check Worker > Settings > Triggers: two cron schedules should be listed (every minute for scheduled publishing, hourly for permanent deletion and upload cleanup).
 
 ## 6. Verify (works in Termux, needs Node 18+)
