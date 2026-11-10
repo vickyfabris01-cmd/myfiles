@@ -31,12 +31,14 @@ function done(email) {
 function main() {
   const msg = h('p', { class: 'form-msg', role: 'alert' });
   const say = (t) => { msg.textContent = t; msg.classList.add('show'); };
+  const name = h('input', { class: 'input', type: 'text', required: true, autocomplete: 'name', placeholder: 'Your name', maxlength: 80 });
   const email = h('input', { class: 'input', type: 'email', required: true, autocomplete: 'username', placeholder: 'you@example.com', inputmode: 'email' });
   const pass = h('input', { class: 'input', type: 'password', required: true, autocomplete: 'new-password', placeholder: 'At least 8 characters', minlength: 8 });
   const pass2 = h('input', { class: 'input', type: 'password', required: true, autocomplete: 'new-password', placeholder: 'Repeat the password' });
   const agree = h('input', { type: 'checkbox', required: true });
   const submit = h('button', { class: 'btn primary lg block', type: 'submit' }, 'Create account');
   const form = h('form', { class: 'form', novalidate: true },
+    h('label', { class: 'field' }, h('span', { class: 'label' }, 'Your name'), name, h('span', { class: 'hint' }, 'The owner sees this next to your email when reviewing reports or contacting you.')),
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Email'), email),
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Password'), pass),
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Repeat password'), pass2),
@@ -46,6 +48,8 @@ function main() {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     msg.classList.remove('show');
+    const nm = name.value.replace(/\s+/g, ' ').trim();
+    if (!nm) return say('Enter your name.');
     const em = email.value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return say('Enter a valid email address.');
     if (pass.value.length < 8) return say('The password must be at least 8 characters.');
@@ -53,7 +57,7 @@ function main() {
     if (!agree.checked) return say('Please accept the Terms and Privacy Policy to continue.');
     submit.disabled = true; submit.textContent = 'Creating...';
     try {
-      const r = await signUp(em, pass.value);
+      const r = await signUp(em, pass.value, nm);
       if (!r.signedIn) return done(em);
       // email confirmation is switched off in Supabase: the person is already signed in
       const me = (await api('GET', '/admin/me')).admin;

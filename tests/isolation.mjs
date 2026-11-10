@@ -18,7 +18,7 @@ const env = {
 
 /* ---------------- fake database ---------------- */
 const T = { profiles: [], app_settings: [{ id: true, approval_required: true, r2_budget_bytes: 1e10, default_quota_bytes: 2147483648 }],
-  events: [], media_folders: [], media_files: [], upload_sessions: [], reports: [] };
+  events: [], media_folders: [], media_files: [], upload_sessions: [], reports: [], conversations: [], conversation_messages: [] };
 const uuid = () => crypto.randomUUID();
 const own = (id) => T.events.find((e) => e.created_by === id);
 const matchRow = (row, params) => {
@@ -77,6 +77,9 @@ const RPC = {
     T.media_files.push({ id: a.p_file_id, event_id: a.p_event, folder_id: a.p_folder, original_filename: a.p_filename, object_key: a.p_key, media_type: a.p_media_type, mime_type: a.p_mime, size_bytes: a.p_size, taken_at: a.p_taken ?? null, content_hash: a.p_hash ?? null, status: 'uploading', thumbnail_key: null, deleted_at: null, purge_after: null, bin_group: null });
     return { ok: true, used: used + a.p_size, quota: 2147483648 };
   },
+  super_suspended_events: () => T.events.filter((e) => e.suspended_at && !e.deleted_at).map((e) => { const p = T.profiles.find((x) => x.user_id === e.created_by) || {};
+    const c = T.conversations.filter((x) => x.event_id === e.id && x.status === 'open').at(-1);
+    return { event_id: e.id, host_id: e.created_by, host_email: p.email, host_name: p.display_name || null, event_title: e.title, suspended_at: e.suspended_at, suspend_reason: e.suspend_reason, conversation_id: c ? c.id : null }; }),
   system_totals: () => ({ hosts: 4, pending: 1, events: T.events.length, bytes_used: 0 }),
   super_host_list: () => T.profiles.filter((p) => p.role === 'host').map((p) => ({ user_id: p.user_id, email: p.email, display_name: p.display_name || null, status: p.status, events: 0, used_bytes: 0, quota_bytes: 2147483648, created_at: 'x' })),
   super_reports_list: () => T.reports.map((r) => {
@@ -102,8 +105,8 @@ globalThis.fetch = async (input, init = {}) => {
   const body = init.body ? JSON.parse(init.body) : undefined;
   if (m[1]) { const f = RPC[m[2]]; if (!f) return j({ msg: 'no rpc ' + m[2] }, 500); const out = f(body || {}); return j(out === undefined ? null : out); }
   const table = T[m[2]]; const params = [...url.searchParams.entries()];
-  if (init.method === 'GET') { let rows = table.filter((r) => matchRow(r, params)); const lim = url.searchParams.get('limit'); if (lim) rows = rows.slice(0, Number(lim)); return new Response(JSON.stringify(rows.map((r) => withEmbed(m[2], r))), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Range': `0-${rows.length}/${rows.length}` } }); }
-  if (init.method === 'POST') { const rows = (Array.isArray(body) ? body : [body]).map((r) => ({ id: uuid(), created_at: new Date().toISOString(), deleted_at: null, ...(m[2] === 'reports' ? { status: 'open', media_views: 0, media_last_viewed_at: null } : {}), ...r })); if (m[2] === 'profiles' && table.some((p) => p.user_id === body.user_id)) return j({ code: '23505' }, 409); table.push(...rows); return j(rows, 201); }
+  if (init.method === 'GET') { let rows = table.filter((r) => matchRow(r, params)); const total = rows.length; const lim = url.searchParams.get('limit'); if (lim) rows = rows.slice(0, Number(lim)); return new Response(JSON.stringify(rows.map((r) => withEmbed(m[2], r))), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Range': `0-${rows.length}/${total}` } }); }
+  if (init.method === 'POST') { const rows = (Array.isArray(body) ? body : [body]).map((r) => ({ id: uuid(), created_at: new Date().toISOString(), deleted_at: null, ...(m[2] === 'reports' ? { status: 'open', media_views: 0, media_last_viewed_at: null } : {}), ...(m[2] === 'conversations' ? { status: 'open', closed_at: null, opened_at: new Date().toISOString(), last_message_at: new Date().toISOString(), last_sender: null, last_preview: null, host_seen_at: null, super_seen_at: null } : {}), ...r })); if (m[2] === 'profiles' && table.some((p) => p.user_id === body.user_id)) return j({ code: '23505' }, 409); table.push(...rows); return j(rows, 201); }
   if (init.method === 'PATCH') { const hit = table.filter((r) => matchRow(r, params)); hit.forEach((r) => Object.assign(r, body)); return j(hit); }
   if (init.method === 'DELETE') { const hit = table.filter((r) => matchRow(r, params)); hit.forEach((r) => table.splice(table.indexOf(r), 1)); return j(hit); }
   return j({}, 500);
@@ -357,6 +360,98 @@ T.media_files.find((f) => f.id === FILEA2).status = 'ready';
 await call('tokS', 'POST', `/super/reports/${newest.id}/dismiss`);
 const closed = await call('tokS', 'GET', `/super/reports/${newest.id}/media`);
 check('once the report is closed its file can no longer be opened', closed.status === 409 && closed.code === 'REPORT_CLOSED' && T.reports.find((r) => r.id === newest.id).media_views === 2);
+
+
+/* ---------------- 6c. suspension notices and the admin-started chat ---------------- */
+const convsA = T.conversations.filter((c) => c.host_id === U(1));
+check('suspending an event and a host (section 6) told host A, one conversation each', convsA.length === 2 && convsA.some((c) => c.kind === 'event_suspended') && convsA.some((c) => c.kind === 'account_suspended'));
+const evConv = convsA.find((c) => c.kind === 'event_suspended'), acConv = convsA.find((c) => c.kind === 'account_suspended');
+const msgsOf = (id) => T.conversation_messages.filter((m) => m.conversation_id === id);
+check('the standard notice names the event, and the restore was added to the same conversation', msgsOf(evConv.id).length === 2 && /SECRET WEDDING/.test(msgsOf(evConv.id)[0].body) && /restored/.test(msgsOf(evConv.id)[1].body) && evConv.event_id === EA && evConv.event_title === 'SECRET WEDDING');
+check('account suspension and restore share one conversation too', msgsOf(acConv.id).length === 2 && /suspended/.test(msgsOf(acConv.id)[0].body) && /restored/.test(msgsOf(acConv.id)[1].body));
+
+// the host's side
+const hl = await call('tokA', 'GET', '/admin/conversations');
+check('host A sees their own conversations, both unread', hl.status === 200 && hl.data.conversations.length === 2 && hl.data.unread === 2 && hl.data.conversations.every((c) => c.unread));
+check('the host list never carries the report id or other hosts\' data', !/report_id|host_email|b@x\.test|c@x\.test/.test(hl.text));
+check('unread count endpoint agrees', (await call('tokA', 'GET', '/admin/conversations/unread')).data.unread === 2);
+const th = await call('tokA', 'GET', `/admin/conversations/${evConv.id}`);
+check('host can read the thread (oldest first) and it is then marked read', th.status === 200 && th.data.messages.length === 2 && th.data.messages[0].sender === 'super_admin' && th.data.conversation.unread === false && (await call('tokA', 'GET', '/admin/conversations/unread')).data.unread === 1);
+const hb = await call(B, 'GET', '/admin/conversations');
+check('host B sees none of host A\'s conversations', hb.status === 200 && hb.data.conversations.length === 0 && hb.data.unread === 0);
+check('host B cannot read or reply to host A\'s conversation (looks like it does not exist)', (await call(B, 'GET', `/admin/conversations/${evConv.id}`)).code === 'CONVERSATION_NOT_FOUND' && (await call(B, 'POST', `/admin/conversations/${evConv.id}/reply`, { body: 'hi' })).code === 'CONVERSATION_NOT_FOUND' && msgsOf(evConv.id).length === 2);
+check('anonymous cannot reach messages; the super admin account is not a host', (await call(null, 'GET', '/admin/conversations')).status === 401 && (await call('tokS', 'GET', '/admin/conversations')).code === 'NOT_A_HOST');
+check('a malformed conversation id is rejected', (await call('tokA', 'GET', '/admin/conversations/nope')).status === 400);
+
+// the host replies
+const rp = await call('tokA', 'POST', `/admin/conversations/${evConv.id}/reply`, { body: 'It was a family photo, I have permission.' });
+check('host can reply while the conversation is open', rp.status === 200 && msgsOf(evConv.id).length === 3 && msgsOf(evConv.id)[2].sender === 'host' && T.conversations.find((c) => c.id === evConv.id).last_sender === 'host');
+check('empty and over-long replies are refused', (await call('tokA', 'POST', `/admin/conversations/${evConv.id}/reply`, { body: '   ' })).status === 400 && (await call('tokA', 'POST', `/admin/conversations/${evConv.id}/reply`, { body: 'x'.repeat(2001) })).status === 400 && msgsOf(evConv.id).length === 3);
+
+// the super admin's side
+const sl = await call('tokS', 'GET', '/super/conversations');
+const sEv = sl.data.conversations.find((c) => c.id === evConv.id);
+check('super admin sees the open conversations with host name and email, host reply shown as unread', sl.status === 200 && sEv && sEv.host_name === 'Alice Host' && sEv.host_email === 'a@x.test' && sEv.unread === true && sEv.event_title === 'SECRET WEDDING');
+check('the super admin conversation list never carries the share link', !/\/e\/|share_token|originals/.test(sl.text));
+const sg = await call('tokS', 'GET', `/super/conversations/${evConv.id}`);
+check('super admin can open the thread, which marks it read', sg.status === 200 && sg.data.messages.length === 3 && sg.data.messages[2].sender === 'host' && sg.data.conversation.unread === false);
+check('hosts cannot use any super conversation route', (await call(B, 'GET', '/super/conversations')).code === 'NOT_SUPER_ADMIN' && (await call(B, 'POST', '/super/conversations', { host_id: U(1), subject: 'x', body: 'y' })).code === 'NOT_SUPER_ADMIN' && (await call(B, 'POST', `/super/conversations/${evConv.id}/close`)).code === 'NOT_SUPER_ADMIN' && (await call(B, 'POST', `/super/conversations/${evConv.id}/messages`, { body: 'x' })).code === 'NOT_SUPER_ADMIN');
+check('a host cannot start or close a conversation (there is no such route)', (await call('tokA', 'POST', '/admin/conversations', { subject: 'x', body: 'y' })).status === 404 && (await call('tokA', 'POST', `/admin/conversations/${evConv.id}/close`)).status === 404);
+
+// a suspension with the owner's own words, and the suspended-events list
+const openRep = T.reports.find((r) => r.status === 'open');
+const sus = await call('tokS', 'POST', `/super/reports/${openRep.id}/suspend-event`, { message: 'Please send proof that everyone agreed.' });
+check('suspending with a message sends those words, in the same open conversation', sus.status === 200 && sus.data.conversation_id === evConv.id && msgsOf(evConv.id).at(-1).body === 'Please send proof that everyone agreed.' && msgsOf(evConv.id).at(-1).sender === 'super_admin');
+const se = await call('tokS', 'GET', '/super/suspended-events');
+check('suspended events are listed with host name, title and the open conversation', se.status === 200 && se.data.events.length === 1 && se.data.events[0].id === EA && se.data.events[0].host_name === 'Alice Host' && se.data.events[0].title === 'SECRET WEDDING' && se.data.events[0].conversation_id === evConv.id && !/\/e\/|share_token/.test(se.text));
+check('a message that is too long is refused BEFORE anything changes', (await call('tokS', 'POST', `/super/reports/${T.reports.find((r) => r.status === 'open')?.id || rid}/suspend-event`, { message: 'x'.repeat(2001) })).status === 400 && (await call('tokS', 'POST', `/super/hosts/${U(2)}/suspend`, { message: 'x'.repeat(2001) })).status === 400 && T.profiles.find((p) => p.user_id === U(2)).status === 'active');
+const lift = await call('tokS', 'POST', `/super/events/${EA}/unsuspend`);
+check('super admin can lift a suspension straight from the list, and the host is told', lift.status === 200 && !T.events.find((e) => e.id === EA).suspended_at && /restored/.test(msgsOf(evConv.id).at(-1).body));
+check('lifting twice, or an unknown or malformed id, is refused', (await call('tokS', 'POST', `/super/events/${EA}/unsuspend`)).code === 'BAD_STATE' && (await call('tokS', 'POST', `/super/events/${uuid()}/unsuspend`)).code === 'EVENT_NOT_FOUND' && (await call('tokS', 'POST', '/super/events/nope/unsuspend')).status === 400);
+check('the list is empty again', (await call('tokS', 'GET', '/super/suspended-events')).data.events.length === 0);
+
+// a SUSPENDED host can still read and answer, but nothing else
+await call('tokS', 'POST', `/super/hosts/${U(1)}/suspend`, { message: 'Your account is suspended while we review the report.' });
+check('suspending a host with a message uses those words', msgsOf(acConv.id).at(-1).body === 'Your account is suspended while we review the report.');
+check('a suspended host is blocked from their events and uploads', (await call('tokA', 'GET', '/admin/events')).code === 'ACCOUNT_SUSPENDED' && (await call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, filename: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 10 })).code === 'ACCOUNT_SUSPENDED');
+const sh1 = await call('tokA', 'GET', '/admin/conversations');
+check('...but can still open their messages', sh1.status === 200 && sh1.data.conversations.length === 2 && sh1.data.unread >= 1);
+check('...and can reply to defend themselves', (await call('tokA', 'POST', `/admin/conversations/${acConv.id}/reply`, { body: 'I did nothing wrong, please check the photo.' })).status === 200 && msgsOf(acConv.id).at(-1).sender === 'host');
+check('...and /admin/me still tells them their status', (await call('tokA', 'GET', '/admin/me')).data.admin.status === 'suspended');
+const pend = await call('tokC', 'GET', '/admin/conversations');
+check('a host waiting for approval also reaches the inbox (empty)', pend.status === 200 && pend.data.conversations.length === 0);
+
+// only the super admin closes; history is kept
+const cl = await call('tokS', 'POST', `/super/conversations/${acConv.id}/close`);
+check('super admin can close a conversation', cl.status === 200 && T.conversations.find((c) => c.id === acConv.id).status === 'closed' && !!T.conversations.find((c) => c.id === acConv.id).closed_at);
+const nBefore = msgsOf(acConv.id).length;
+check('after closing, the host cannot reply and the super admin cannot add either', (await call('tokA', 'POST', `/admin/conversations/${acConv.id}/reply`, { body: 'one more thing' })).code === 'CONVERSATION_CLOSED' && (await call('tokS', 'POST', `/super/conversations/${acConv.id}/messages`, { body: 'and another' })).code === 'CONVERSATION_CLOSED' && msgsOf(acConv.id).length === nBefore);
+check('closing twice is refused', (await call('tokS', 'POST', `/super/conversations/${acConv.id}/close`)).code === 'BAD_STATE');
+const hist = await call('tokA', 'GET', `/admin/conversations/${acConv.id}`);
+check('the closed conversation is still readable by the host, marked closed', hist.status === 200 && hist.data.messages.length === nBefore && hist.data.conversation.status === 'closed');
+check('the super admin list hides closed ones by default and shows them with status=all', !(await call('tokS', 'GET', '/super/conversations')).data.conversations.some((c) => c.id === acConv.id) && (await call('tokS', 'GET', '/super/conversations?status=all')).data.conversations.some((c) => c.id === acConv.id && c.status === 'closed'));
+await call('tokS', 'POST', `/super/hosts/${U(1)}/restore`);
+check('restoring a host after the conversation was closed starts a NEW conversation (history stays closed)', T.conversations.filter((c) => c.host_id === U(1) && c.kind === 'account_suspended').length === 2 && msgsOf(acConv.id).length === nBefore);
+
+// the super admin starts a conversation on their own
+const evB2 = await call(B, 'POST', '/admin/events', { title: 'B event', event_date: '2026-01-01' });
+const st = await call('tokS', 'POST', '/super/conversations', { host_id: U(2), subject: 'About your wedding event', body: 'Hello, a question about your event.', event_id: evB2.data.event.id });
+check('super admin can start a conversation with a host about one of their events', st.status === 200 && T.conversations.find((c) => c.id === st.data.id).kind === 'general' && T.conversations.find((c) => c.id === st.data.id).event_title === 'B event' && msgsOf(st.data.id).length === 1);
+check('host B receives it; host A does not', (await call(B, 'GET', '/admin/conversations')).data.unread === 1 && (await call('tokA', 'GET', '/admin/conversations')).data.conversations.every((c) => c.id !== st.data.id));
+check('starting needs a real host, an event of THAT host, a subject and a message', (await call('tokS', 'POST', '/super/conversations', { host_id: uuid(), subject: 'x', body: 'y' })).code === 'HOST_NOT_FOUND' && (await call('tokS', 'POST', '/super/conversations', { host_id: U(2), subject: 'x', body: 'y', event_id: EA })).code === 'EVENT_NOT_FOUND' && (await call('tokS', 'POST', '/super/conversations', { host_id: U(2), subject: '', body: 'y' })).status === 400 && (await call('tokS', 'POST', '/super/conversations', { host_id: U(2), subject: 'x', body: '' })).status === 400 && (await call('tokS', 'POST', '/super/conversations', { host_id: U(2), subject: 'x'.repeat(151), body: 'y' })).status === 400 && (await call('tokS', 'POST', '/super/conversations', { host_id: U(5), subject: 'x', body: 'y' })).code === 'HOST_NOT_FOUND');
+for (let i = 0; i < 199; i++) T.conversation_messages.push({ id: uuid(), conversation_id: st.data.id, sender: 'super_admin', body: 'filler', created_at: new Date().toISOString() });
+check('a conversation stops at 200 messages', (await call(B, 'POST', `/admin/conversations/${st.data.id}/reply`, { body: 'one too many' })).code === 'CONVERSATION_FULL');
+
+// the suspension stands even if the notice cannot be saved
+const savedConv = T.conversations; T.conversations = undefined;
+const noNotice = await call('tokS', 'POST', `/super/hosts/${U(2)}/suspend`);
+T.conversations = savedConv;
+check('if the notice cannot be saved the suspension still happens and the answer says so (conversation_id null)', noNotice.status === 200 && noNotice.data.status === 'suspended' && noNotice.data.conversation_id === null && T.profiles.find((p) => p.user_id === U(2)).status === 'suspended');
+await call('tokS', 'POST', `/super/hosts/${U(2)}/restore`);
+
+// the host's own name
+check('a host can set their name; blank, over-long and control-character names are refused', (await call(B, 'PATCH', '/admin/account', { name: 'Bob Builder' })).status === 200 && T.profiles.find((p) => p.user_id === U(2)).display_name === 'Bob Builder' && (await call(B, 'PATCH', '/admin/account', { name: '   ' })).status === 400 && (await call(B, 'PATCH', '/admin/account', { name: 'x'.repeat(81) })).status === 400 && (await call(B, 'PATCH', '/admin/account', { name: 'Bob\u0007' })).status === 400 && (await call(B, 'GET', '/admin/me')).data.admin.name === 'Bob Builder');
+check('a host cannot rename another host, and the super admin and anonymous users cannot use the route', T.profiles.find((p) => p.user_id === U(1)).display_name === 'Alice Host' && (await call('tokS', 'PATCH', '/admin/account', { name: 'x' })).code === 'SUPER_ADMIN_NO_EVENTS' && (await call(null, 'PATCH', '/admin/account', { name: 'x' })).status === 401);
 
 /* ---------------- 7. delete my account ---------------- */
 check('delete account needs the word DELETE', (await call('tokA', 'POST', '/admin/account/delete', { confirm: 'no' })).status === 400);

@@ -8,8 +8,8 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 export class Viewer {
   // getFiles(): current loaded files, loadMore(): Promise, hasMore(): bool, onDownload(file)
-  constructor({ token, getFiles, hasMore, loadMore, onDownload }) {
-    Object.assign(this, { token, getFiles, hasMore, loadMore, onDownload });
+  constructor({ token, getFiles, hasMore, loadMore, onDownload, onReport }) {
+    Object.assign(this, { token, getFiles, hasMore, loadMore, onDownload, onReport });
     this.root = null; this.index = -1; this.nav = 0;
     this.scale = 1; this.tx = 0; this.ty = 0; this.pointers = new Map(); this.drag = null; this.pinch = null;
     this.media = null; this.openFlag = false; this.restoreFocus = null; this.pushed = false;
@@ -33,8 +33,9 @@ export class Viewer {
     this.nextBtn = b('Next', 'chevron', () => this.go(1), 'v-nav v-next');
     this.zoomBtns = h('div', { class: 'v-zoom' }, b('Zoom out', 'zoom-out', () => this.zoomBy(1 / 1.5)), b('Zoom in', 'zoom-in', () => this.zoomBy(1.5)), b('Reset zoom', 'refresh', () => this.resetZoom()));
     this.dlBtn = b('Download original', 'download', () => this.file && this.onDownload(this.file));
+    this.reportBtn = this.onReport ? b('Report this file', 'flag', () => this.file && this.onReport(this.file)) : null;
     this.root = h('div', { class: 'v-root', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Media viewer', hidden: true },
-      h('div', { class: 'v-top' }, this.closeBtn, h('div', { class: 'v-info' }, this.titleEl, this.metaEl), this.zoomBtns, this.dlBtn),
+      h('div', { class: 'v-top' }, this.closeBtn, h('div', { class: 'v-info' }, this.titleEl, this.metaEl), this.zoomBtns, this.reportBtn, this.dlBtn),
       this.stage, this.prevBtn, this.nextBtn, this.spin, this.note, h('div', { class: 'v-bottom' }, this.counter));
     document.body.append(this.root);
 
@@ -87,6 +88,9 @@ export class Viewer {
 
   onKey(e) {
     if (!this.openFlag) return;
+    // typing in a dialog (for example the report form) must not move or close the viewer
+    const t = e.target;
+    if (t && t.closest && (t.closest('dialog') || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     if (e.key === 'Escape') { e.preventDefault(); this.close(); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); this.go(1); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(-1); }

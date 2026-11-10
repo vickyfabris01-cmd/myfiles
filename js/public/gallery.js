@@ -10,7 +10,7 @@ import { CONFIG } from '../config.js';
 
 const TARGET = () => (window.innerWidth < 720 ? 120 : 200);
 
-export function mountGallery(root, { token, eventTitle, onUnavailable }) {
+export function mountGallery(root, { token, eventTitle, onUnavailable, onReport }) {
   const S = {
     folderId: new URLSearchParams(location.search).get('f') || null,
     current: null, crumbs: [], folders: [], files: [], total: 0, hasMore: false, loaded: false, loadingMore: false,
@@ -27,7 +27,11 @@ export function mountGallery(root, { token, eventTitle, onUnavailable }) {
   const viewer = new Viewer({
     token, getFiles: () => S.files, hasMore: () => S.hasMore, loadMore: () => loadMore(),
     onDownload: (f) => import('./downloads.js').then((m) => m.downloadOne(token, f)),
+    onReport: onReport ? (f) => onReport(context(f)) : null,
   });
+
+  // what the report dialog needs to know about where the visitor is right now
+  const context = (file = null) => ({ folderId: S.folderId, folderName: S.current ? S.current.name : null, files: S.files, file });
 
   const urlFor = (folderId) => {
     const p = new URLSearchParams(location.search);
@@ -213,5 +217,5 @@ export function mountGallery(root, { token, eventTitle, onUnavailable }) {
 
   renderToolbar();
   load();
-  return { reload: load };
+  return { reload: load, context };
 }

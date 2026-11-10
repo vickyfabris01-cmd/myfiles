@@ -17,6 +17,7 @@ const PENDING = new URL('../../admin/pending.html', import.meta.url).href;
 const BIN = new URL('../../admin/bin.html', import.meta.url).href;
 const STORAGE = new URL('../../admin/storage.html', import.meta.url).href;
 const SUPER = new URL('../../admin/super.html', import.meta.url).href;
+const MESSAGES = new URL('../../admin/messages.html', import.meta.url).href;
 const FORGOT = new URL('../../admin/forgot.html', import.meta.url).href;
 
 // Central place for page links, so pages never hard-code paths.
@@ -27,6 +28,7 @@ export const ROUTES = {
   bin: BIN,
   storage: STORAGE,
   super: SUPER,
+  messages: MESSAGES,
   events: EVENTS,
   editor: (id, folderId) => `${EDITOR}?id=${encodeURIComponent(id)}${folderId ? `&folder=${encodeURIComponent(folderId)}` : ''}`,
   upload: (eventId, folderId) => {
@@ -66,9 +68,13 @@ export function mountHeader(admin, active) {
   if (!host) return;
   const link = (key, href, label, ic) => h('a', { class: `navlink${active === key ? ' active' : ''}`, href }, icon(ic, 18), h('span', null, label));
   const isSuper = admin.role === 'super_admin';
+  const inactive = !isSuper && admin.status !== 'active';   // pending or suspended hosts can only reach their messages
+  const badge = h('span', { class: 'nav-badge', hidden: true });
+  const msgLink = h('a', { class: `navlink${active === 'messages' ? ' active' : ''}`, href: MESSAGES }, icon('message', 18), h('span', null, 'Messages'), badge);
   const nav = isSuper
     ? [link('super', SUPER, 'Dashboard', 'select')]
-    : [link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload'), link('storage', STORAGE, 'Storage', 'cloud-lock'), link('bin', BIN, 'Bin', 'trash')];
+    : inactive ? [msgLink]
+    : [link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload'), link('storage', STORAGE, 'Storage', 'cloud-lock'), link('bin', BIN, 'Bin', 'trash'), msgLink];
   const doSignOut = async () => { await signOut(); redirectToLogin('signed_out'); };
 
   // DESKTOP: everything in the header (unchanged). Items with `desk-only` are hidden on phones.
@@ -87,11 +93,16 @@ export function mountHeader(admin, active) {
   const tab = (key, href, label, ic) => h('a', { class: `bn-item${active === key ? ' active' : ''}`, href, 'aria-current': active === key ? 'page' : null }, icon(ic, 22), h('span', null, label));
   const tabs = isSuper
     ? [tab('super', SUPER, 'Dashboard', 'select')]
+    : inactive ? [tab('messages', MESSAGES, 'Messages', 'message')]
     : [tab('events', EVENTS, 'Events', 'calendar'), tab('upload', UPLOAD, 'Upload', 'upload'), tab('storage', STORAGE, 'Storage', 'cloud-lock'), tab('bin', BIN, 'Bin', 'trash')];
 
   const more = h('button', { class: 'bn-item', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-controls': 'more-sheet' }, icon('menu', 22), h('span', null, 'Menu'));
+  const dot = h('span', { class: 'nav-dot', hidden: true });
+  more.append(dot);
+  const sheetBadge = h('span', { class: 'nav-badge', hidden: true });
   const sheet = h('div', { class: 'more-sheet', id: 'more-sheet', role: 'menu', hidden: true, 'aria-label': 'Account menu' },
-    h('p', { class: 'more-who' }, admin.email || 'Account'),
+    h('p', { class: 'more-who' }, admin.name ? `${admin.name} - ${admin.email || ''}` : (admin.email || 'Account')),
+    isSuper || inactive ? null : h('a', { class: 'btn ghost', href: MESSAGES, role: 'menuitem' }, icon('message', 18), 'Messages', sheetBadge),
     createInstallButton(),
     h('button', { class: 'btn ghost', type: 'button', role: 'menuitem', onclick: doSignOut }, icon('logout', 18), 'Sign out'));
   const closeMenu = (refocus) => { if (sheet.hidden) return; sheet.hidden = true; more.setAttribute('aria-expanded', 'false'); if (refocus) more.focus(); };
@@ -107,6 +118,19 @@ export function mountHeader(admin, active) {
 
   mount(host, header, h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, tabs, more), sheet);
   document.body.classList.add('has-bottom-nav'); // makes room for the bottom bar on phones (see css/admin.css)
+
+  // Unread messages from the owner: a number next to Messages, and a dot on the phone's Menu button.
+  if (!isSuper) {
+    const show = (n) => {
+      [badge, sheetBadge].forEach((b) => { b.hidden = !n; b.textContent = n > 9 ? '9+' : String(n); });
+      dot.hidden = !n || inactive;
+      if (inactive) { const t = document.querySelector('.bn-item'); if (t && !t.querySelector('.nav-dot')) t.append(h('span', { class: 'nav-dot' })); if (!n) { const d = t && t.querySelector('.nav-dot'); if (d) d.remove(); } }
+    };
+    const refresh = () => api('GET', '/admin/conversations/unread').then((r) => show(r.unread || 0)).catch(() => {});
+    refresh();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+    window.addEventListener('myfiles:unread', (e) => show(e.detail || 0));
+  }
 }
 
 // Call first on every account page except sign-in / sign-up. Resolves with the account, or navigates away.

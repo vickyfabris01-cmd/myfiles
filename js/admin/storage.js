@@ -1,6 +1,6 @@
 // js/admin/storage.js  -  the host's own storage dashboard: usage bar across all events, per-event usage, delete account.
 import { requireAdmin, ROUTES } from './auth.js';
-import { get, post } from '../api.js';
+import { get, post, patch } from '../api.js';
 import { h, mount, formatBytes } from '../util.js';
 import { icon } from '../icons.js';
 import { showError, confirmDialog, withBusy, loading, emptyState, formDialog } from '../ui.js';
@@ -30,8 +30,19 @@ async function deleteAccount(btn) {
   });
 }
 
+// The name the owner sees next to your email.
+function detailsCard(me) {
+  const name = h('b', null, me.name || 'Not set');
+  const edit = h('button', { class: 'btn secondary sm', type: 'button', onclick: async () => {
+    const v = await formDialog({ title: 'Your name', submitLabel: 'Save', intro: 'The owner sees this next to your email when reviewing reports or contacting you.', fields: [{ name: 'name', label: 'Name', value: me.name || '', maxLength: 80, required: true }] });
+    if (!v) return;
+    try { const r = await patch('/admin/account', { name: v.name }); me.name = r.name; mount(name, me.name); } catch (e) { showError(e); }
+  } }, icon('edit', 16), 'Change');
+  return h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Your details'), h('div', { class: 'row between' }, h('div', null, name, h('p', { class: 'muted small' }, me.email)), edit));
+}
+
 async function main() {
-  await requireAdmin({ active: 'storage' });
+  const me = await requireAdmin({ active: 'storage' });
   const app = document.getElementById('app');
   mount(app, loading());
   let s;
@@ -47,6 +58,7 @@ async function main() {
       h('p', { class: 'hint' }, `Limits: ${formatBytes(s.limits.video_bytes)} per video, ${formatBytes(s.limits.image_bytes)} per photo, ${s.max_active_events} active events (you have ${s.active_events}). Tip: recording video at 1080p instead of 4K often halves the size.`)),
     h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Usage by event'),
       rows.length ? h('div', { class: 'u-rows' }, rows) : h('p', { class: 'muted' }, 'No events yet.')),
+    detailsCard(me),
     h('section', { class: 'card pad danger-zone' }, h('h2', { class: 'h2' }, 'Delete my account'),
       h('p', { class: 'muted' }, 'Permanently removes your account and every event, photo and video you uploaded.'),
       h('button', { class: 'btn danger', type: 'button', onclick: (e) => deleteAccount(e.currentTarget) }, icon('trash', 18), 'Delete my account')));

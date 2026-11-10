@@ -1,6 +1,7 @@
 // cloudflare/worker/auth.js
 // Every protected route: verify the Supabase JWT with Supabase Auth, then load the account's profile.
 //   mode 'any'   : any signed-in confirmed account (used by /admin/me so pending and suspended people can see their status)
+//   mode 'inbox' : a host in ANY state (pending, active or suspended), so a suspended host can still read and answer the owner's messages
 //   mode 'host'  : an ACTIVE host (the normal events / uploads / bin routes)
 //   mode 'super' : the ACTIVE super admin (system routes only; the super admin has no events)
 // The token check is cached for 30 s, but the profile is read on every request, so a suspension takes effect at once.
@@ -52,6 +53,10 @@ export async function requireUser(request, env, db, mode = 'host') {
   const p = await loadProfile(db, user);
   const me = { id: user.id, email: p.email || user.email, name: p.display_name || null, role: p.role, status: p.status };
   if (mode === 'any') return me;
+  if (mode === 'inbox') {
+    if (p.role !== 'host') throw new ApiError(403, 'NOT_A_HOST', 'Messages are for host accounts');
+    return me;
+  }
   if (p.status === 'suspended') throw new ApiError(403, 'ACCOUNT_SUSPENDED', 'This account has been suspended');
   if (p.status === 'pending') throw new ApiError(403, 'ACCOUNT_PENDING', 'This account is waiting for approval');
   if (mode === 'super') {

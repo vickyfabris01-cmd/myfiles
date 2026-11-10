@@ -9,3 +9,12 @@ folders and files, suspension, reports). Run it ONCE, after `schema.sql` and `00
 ## Date taken and duplicate warning (zip 2)
 `005_date_taken_and_duplicates.sql` adds the date a photo/video was taken, a "sort by date" column, and a photo content hash used
 for the duplicate warning. Run it ONCE, after 003 and 004. It does not delete anything.
+
+## Report details (004)
+`004_report_details.sql` adds the host's display name and the details a report carries (event title, folder name, file name, how many
+times the reported file was opened) and two new report/host list functions. Run it ONCE, after 003.
+
+## Messages (006)
+`006_messages.sql` adds `conversations` and `conversation_messages` (the owner's notices and chats with hosts about suspensions)
+and `super_suspended_events()`. Run it ONCE, after 005. It does not delete anything and can be re-run safely.
+Run order: 003, 004, 005, 006. Then deploy the Worker, then the site.

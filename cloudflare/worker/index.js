@@ -15,11 +15,13 @@ import * as bin from './bin.js';
 import * as usage from './usage.js';
 import * as rep from './reports.js';
 import * as sup from './super.js';
+import * as msg from './messages.js';
+import * as account from './account.js';
 import { runSchedules } from './schedules.js';
 import { purgeExpiredEvents, purgeExpiredBin, cleanupExpiredUploads } from './cleanup.js';
 
 // [method, path, rate group, who may call it, handler]
-// who: false = anyone (public) | 'any' = any signed-in confirmed account | 'host' = an ACTIVE host | 'super' = the ACTIVE super admin
+// who: false = anyone (public) | 'any' = any signed-in confirmed account | 'inbox' = a host in any state (messages) | 'host' = an ACTIVE host | 'super' = the ACTIVE super admin
 // Every 'host' handler checks that the event / folder / file / upload belongs to the caller (see owner.js).
 const ROUTES = [
   ['GET', '/health', 'public', false, () => ({ status: 'ok' })],
@@ -36,6 +38,12 @@ const ROUTES = [
 
   // admin: session
   ['GET', '/admin/me', 'admin', 'any', ({ admin }) => ({ admin })],   // also works for pending and suspended accounts, so they can see their status
+
+  // host: messages from the owner (also open to suspended hosts, so they can reply)
+  ['GET', '/admin/conversations', 'admin', 'inbox', msg.hostList],
+  ['GET', '/admin/conversations/unread', 'admin', 'inbox', msg.hostUnread],
+  ['GET', '/admin/conversations/:id', 'admin', 'inbox', msg.hostGet],
+  ['POST', '/admin/conversations/:id/reply', 'admin', 'inbox', msg.hostReply],
 
   // admin: events
   ['GET', '/admin/events', 'admin', 'host', ev.list],
@@ -78,6 +86,7 @@ const ROUTES = [
   ['POST', '/admin/bin/empty', 'admin', 'host', bin.empty],
   ['GET', '/admin/storage', 'admin', 'host', usage.storage],
   ['POST', '/admin/account/delete', 'admin', 'host', usage.deleteAccount],
+  ['PATCH', '/admin/account', 'admin', 'host', account.rename],
 
   // super admin (counts and sizes only; reports also carry the names needed to review them and one openable file)
   ['GET', '/super/overview', 'admin', 'super', sup.overview],
@@ -93,6 +102,13 @@ const ROUTES = [
   ['POST', '/super/reports/:id/suspend-event', 'admin', 'super', sup.suspendEvent],
   ['POST', '/super/reports/:id/unsuspend-event', 'admin', 'super', sup.unsuspendEvent],
   ['POST', '/super/reports/:id/suspend-host', 'admin', 'super', sup.suspendHostFromReport],
+  ['GET', '/super/suspended-events', 'admin', 'super', msg.suspendedEvents],
+  ['POST', '/super/events/:id/unsuspend', 'admin', 'super', sup.unsuspendEventById],
+  ['GET', '/super/conversations', 'admin', 'super', msg.superList],
+  ['POST', '/super/conversations', 'admin', 'super', msg.superStart],
+  ['GET', '/super/conversations/:id', 'admin', 'super', msg.superGet],
+  ['POST', '/super/conversations/:id/messages', 'admin', 'super', msg.superReply],
+  ['POST', '/super/conversations/:id/close', 'admin', 'super', msg.superClose],
 ].map(([method, path, group, admin, handler]) => ({
   method,
   group,

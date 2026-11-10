@@ -46,7 +46,7 @@ function renderHead() {
 
 function renderBanner() {
   if (suspended() && !readOnly()) {
-    mount(el.banner, h('div', { class: 'banner danger' }, icon('alert', 20), h('div', { class: 'grow' }, h('b', null, 'This event has been suspended'), h('p', null, 'Its link is switched off and it cannot be published. Your files are not deleted.'))));
+    mount(el.banner, h('div', { class: 'banner danger' }, icon('alert', 20), h('div', { class: 'grow' }, h('b', null, 'This event has been suspended'), h('p', null, 'Its link is switched off and it cannot be published. Your files are not deleted. ', h('a', { href: ROUTES.messages }, 'Open your messages'), ' to read why and to reply.'))));
     return;
   }
   if (!readOnly()) { mount(el.banner); return; }

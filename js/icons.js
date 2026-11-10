@@ -35,6 +35,8 @@ const P = {
   select: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   'cloud-lock': '<path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1 1 7.87"/><rect x="9" y="14" width="8" height="6" rx="1.5"/><path d="M10.5 14v-1.5a2.5 2.5 0 0 1 5 0V14"/>',
+  flag: '<path d="M5 21V4m0 0h11l-2 4 2 4H5"/>',
+  message: '<path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12Z"/>',
   download: '<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>',
   'zoom-in': '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/>',
   'zoom-out': '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',

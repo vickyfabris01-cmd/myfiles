@@ -20,6 +20,9 @@ export const LIMITS = {
   UPLOADS_PER_MINUTE: 120,      // anti-abuse: new uploads per host per minute
   REPORT_MAX_CHARS: 1000,
   REPORTS_PER_EVENT_HOUR: 20,   // stops report flooding on one event
+  MESSAGE_MAX_CHARS: 2000,
+  SUBJECT_MAX_CHARS: 150,
+  MESSAGES_PER_CONVERSATION: 200,   // stops a thread from being flooded; the super admin can close it and start a new one
 };
 
 export const RATE = {            // requests per minute per IP (best effort, per isolate)
