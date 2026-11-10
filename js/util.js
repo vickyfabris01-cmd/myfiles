@@ -87,4 +87,4 @@ export async function copyText(text) {
   return ok;
 }
 
-export const STATE_LABEL = { published: 'Published', unpublished: 'Unpublished', scheduled: 'Scheduled', pending_deletion: 'Pending deletion' };
+export const STATE_LABEL = { published: 'Published', unpublished: 'Unpublished', scheduled: 'Scheduled', pending_deletion: 'Pending deletion', suspended: 'Suspended' };

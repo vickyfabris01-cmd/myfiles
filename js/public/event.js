@@ -3,13 +3,14 @@ import { pub, tokenFromLocation } from './api.js';
 import { mountGallery } from './gallery.js';
 import { h, mount, formatEventDate } from '../util.js';
 import { icon } from '../icons.js';
-import { loading } from '../ui.js';
+import { loading, formDialog, toast, showError } from '../ui.js';
 
 const app = document.getElementById('app');
 
 const MESSAGES = {
   not_found: { icon: 'link', title: 'This link is not valid', text: 'It does not match any event. Check that the whole link was copied, or ask the person who shared it to send it again.' },
   unpublished: { icon: 'lock', title: 'This event is not available right now', text: 'The host has not published it yet, or has paused sharing. Please check back later.' },
+  suspended: { icon: 'lock', title: 'This event is not available', text: 'This event has been switched off and can no longer be opened.' },
   deleted: { icon: 'alert', title: 'This event has been removed', text: 'The host has deleted this event, so it can no longer be opened.' },
 };
 
@@ -58,6 +59,18 @@ function hero(ev) {
       desc, more));
 }
 
+// "Report" link: tells the service owner, who can switch the event off without opening it.
+async function report(token) {
+  const v = await formDialog({
+    title: 'Report this event', submitLabel: 'Send report',
+    intro: 'Tell us what is wrong, for example illegal, abusive or private content shared without permission. The owner will review it.',
+    fields: [{ name: 'reason', label: 'What is the problem?', type: 'textarea', required: true, maxLength: 1000 }],
+  });
+  if (!v) return;
+  try { await pub('POST', `/event/${encodeURIComponent(token)}/report`, { reason: v.reason }); toast('Thank you. The owner has been notified.', 'success'); }
+  catch (e) { showError(e); }
+}
+
 async function main() {
   const token = tokenFromLocation();
   if (!token) return unavailable('not_found');
@@ -68,7 +81,8 @@ async function main() {
   const ev = data.event;
   document.title = ev.title;
   const galleryHost = h('div', { class: 'g-wrap' });
-  mount(app, hero(ev), galleryHost, h('footer', { class: 'g-foot' }, 'Photos and videos are shared in their original quality.'));
+  mount(app, hero(ev), galleryHost, h('footer', { class: 'g-foot' }, h('p', null, 'Photos and videos are shared in their original quality.'),
+    h('p', { class: 'g-legal' }, h('button', { class: 'linklike', type: 'button', onclick: () => report(token) }, 'Report this event'), ' - ', h('a', { href: '/terms.html' }, 'Terms'), ' - ', h('a', { href: '/privacy.html' }, 'Privacy'))));
   mountGallery(galleryHost, { token, eventTitle: ev.title, onUnavailable: unavailable });
 }
 main();

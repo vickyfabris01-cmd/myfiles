@@ -81,3 +81,7 @@ Add `BIG=1` in front of the last command to also test a 60 MB multipart upload. 
 - 409 `TOKEN_UNRECOVERABLE`: `TOKEN_ENC_KEY` changed. Use the regenerate-link endpoint.
 - Rate limiting is best effort (per Worker instance). For a hard limit, add a Cloudflare WAF rate-limiting rule on the Worker URL.
 - Never commit keys. If one leaks, rotate it in Supabase or Cloudflare and update the Worker secret.
+
+## Public hosting (many hosts)
+Step 1 of the public hosting plan (accounts, ownership, quotas, recycle bin, super admin) is described in
+`docs/public-hosting-step1.md`. It has the exact steps you must do in Supabase, in order. Run `npm test` before deploying.

@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node tests/unit.mjs",
-    "smoke": "node tests/smoke.mjs"
+    "test": "node tests/unit.mjs && node tests/isolation.mjs",
+    "smoke": "node tests/smoke.mjs",
+    "test:isolation": "node tests/isolation.mjs"
   },
   "devDependencies": {
     "wrangler": "^4"

@@ -11,18 +11,20 @@ export async function loadEvent(db, token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,128}$/.test(token)) throw unavailable('not_found');
   const hash = await hashToken(token);
   const [e] = await db.select('events', {
-    select: 'id,title,event_date,description,location,is_published,deleted_at,cover_mode,cover_pos_x,cover_pos_y',
+    select: 'id,title,event_date,description,location,is_published,deleted_at,suspended_at,cover_mode,cover_pos_x,cover_pos_y,owner:profiles!events_created_by_fkey(status)',
     share_token_hash: `eq.${hash}`,
     limit: 1,
   });
   if (!e) throw unavailable('not_found');
-  if (e.deleted_at) throw unavailable('deleted');
+  if (e.deleted_at) throw unavailable('deleted');           // in the recycle bin: the link stops working at once
+  const owner = Array.isArray(e.owner) ? e.owner[0] : e.owner;
+  if (e.suspended_at || !owner || owner.status !== 'active') throw unavailable('suspended'); // event or host suspended
   if (!e.is_published) throw unavailable('unpublished');
   return e;
 }
 
 async function assertFolderInEvent(db, folderId, eventId) {
-  const [f] = await db.select('media_folders', { select: 'id,name,parent_id', id: `eq.${folderId}`, event_id: `eq.${eventId}`, limit: 1 });
+  const [f] = await db.select('media_folders', { select: 'id,name,parent_id', id: `eq.${folderId}`, event_id: `eq.${eventId}`, deleted_at: 'is.null', limit: 1 });
   if (!f) throw new ApiError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
   return f;
 }

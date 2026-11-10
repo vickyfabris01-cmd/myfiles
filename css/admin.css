@@ -135,3 +135,18 @@ dialog.modal.vt { width: min(640px, calc(100vw - 24px)); }
 .vt-controls { display: flex; flex-direction: column; gap: 10px; }
 .vt-range { width: 100%; height: 36px; accent-color: var(--accent); cursor: pointer; }
 .vt-time { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---- public hosting: storage bar, bin rows, host rows ---- */
+.usage-bar { display: flex; height: 12px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.usage-seg { height: 100%; min-width: 2px; } .usage-seg.photos, .usage-dot.photos { background: var(--accent); }
+.usage-seg.videos, .usage-dot.videos { background: color-mix(in srgb, var(--accent) 45%, var(--ok)); }
+.usage-seg.bin, .usage-dot.bin { background: var(--warn); } .usage-seg.pending, .usage-dot.pending { background: var(--muted); }
+.usage-dot.free { background: var(--surface-2); border: 1px solid var(--line); }
+.usage-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: .85rem; color: var(--muted); }
+.usage-key { display: inline-flex; align-items: center; gap: 6px; } .usage-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.bin-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; } .bin-row .grow { min-width: 220px; flex: 1; }
+.bin-ic { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; color: var(--muted); flex: none; }
+.u-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); } .u-row:last-child { border-bottom: 0; }
+.badge.suspended { background: var(--danger-soft); color: var(--danger); }
+.usage-compact { display: block; text-decoration: none !important; color: inherit; margin-bottom: 14px; }
+.usage-compact .hint { margin-top: 8px; }

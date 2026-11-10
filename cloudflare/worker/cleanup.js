@@ -1,14 +1,14 @@
 // cloudflare/worker/cleanup.js
-// Hourly: permanent deletion after the 7-day recovery period, and abandoned upload cleanup.
+// Hourly: permanent deletion after the 2-day recycle bin period (events, folders, files), and abandoned upload cleanup.
 // Everything here is idempotent: a failed run is simply retried on the next tick.
 import { OBJECT_KEYS } from './config.js';
-import { purgeFiles } from './storage.js';
+import { purgeFiles, hardDeleteFolder, hardDeleteFiles } from './storage.js';
 import { chunk } from './utils.js';
 
 const MAX_ATTEMPTS = 10;
 const MAX_BATCHES_PER_RUN = 20; // 20 x 1000 objects per event per run, the rest continues next run
 
-async function purgeEvent(env, db, eventId) {
+export async function purgeEvent(env, db, eventId) {
   const nowIso = new Date().toISOString();
   const [e] = await db.select('events', {
     select: 'id', id: `eq.${eventId}`, deleted_at: 'not.is.null', purge_after: `lte.${nowIso}`, limit: 1,
@@ -76,4 +76,22 @@ export async function cleanupExpiredUploads(env, db) {
     await db.update('upload_sessions', { id: `in.(${ids.join(',')})`, status: 'in.(pending,uploading)' }, { status: 'expired' });
   }
   return sessions.length;
+}
+
+// Files and folders whose own 2-day timer ran out. Files first, then folders (a folder takes any leftovers with it).
+// Only items in LIVE events are handled here: an event in the bin is purged as a whole by purgeExpiredEvents.
+export async function purgeExpiredBin(env, db, max = 100) {
+  const nowIso = new Date().toISOString();
+  const files = await db.select('media_files', {
+    select: 'id,event_id,object_key,thumbnail_key', deleted_at: 'not.is.null', purge_after: `lte.${nowIso}`, limit: max,
+  });
+  const nf = await hardDeleteFiles(env, db, files);
+  const folders = await db.select('media_folders', {
+    select: 'id', deleted_at: 'not.is.null', purge_after: `lte.${nowIso}`, limit: 20,
+  });
+  let nd = 0;
+  for (const f of folders) {
+    try { await hardDeleteFolder(env, db, f.id); nd++; } catch (err) { console.error('folder purge failed', f.id, err && err.message); }
+  }
+  return { files: nf, folders: nd };
 }

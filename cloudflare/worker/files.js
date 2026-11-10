@@ -4,23 +4,20 @@ import { ApiError, v, readJson, chunk } from './utils.js';
 import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign } from './r2.js';
 import { purgeFiles } from './storage.js';
+import { ownedEvent, ownedFile } from './owner.js';
 
-const COLS = 'id,event_id,folder_id,original_filename,object_key,thumbnail_key,media_type,status';
+const COLS = 'id,event_id,folder_id,original_filename,object_key,thumbnail_key,media_type,status,deleted_at';
 
-async function getFile(db, id) {
-  const [f] = await db.select('media_files', { select: COLS, id: `eq.${v.uuid(id, 'id')}`, limit: 1 });
-  if (!f) throw new ApiError(404, 'FILE_NOT_FOUND', 'File not found');
-  return f;
-}
+const getFile = (db, user, id) => ownedFile(db, user, id, COLS);
 
 async function assertFolderInEvent(db, folderId, eventId) {
   if (!folderId) return;
-  const [f] = await db.select('media_folders', { select: 'id', id: `eq.${folderId}`, event_id: `eq.${eventId}`, limit: 1 });
+  const [f] = await db.select('media_folders', { select: 'id', id: `eq.${folderId}`, event_id: `eq.${eventId}`, deleted_at: 'is.null', limit: 1 });
   if (!f) throw new ApiError(400, 'VALIDATION_ERROR', 'folder_id does not belong to this event');
 }
 
-export async function update({ request, db, params }) {
-  const cur = await getFile(db, params.id);
+export async function update({ request, db, params, admin }) {
+  const cur = await getFile(db, admin, params.id);
   const b = await readJson(request);
   const patch = {};
   if ('folder_id' in b) {
@@ -37,40 +34,57 @@ export async function update({ request, db, params }) {
   return { file: { id: row.id, folder_id: row.folder_id, filename: row.original_filename } };
 }
 
-export async function remove({ env, db, params }) {
-  const cur = await getFile(db, params.id);
-  await purgeFiles(env, db, [cur]);
-  await db.remove('media_files', { id: `eq.${cur.id}` });
-  return { deleted_file_id: cur.id };
+// A finished file goes to the recycle bin (2 days, still counts toward storage). An unfinished or failed upload
+// has nothing worth keeping, so it is removed at once and its reserved space is freed.
+async function binOrPurge(env, db, files) {
+  const done = files.filter((f) => f.status === 'ready');
+  const rest = files.filter((f) => f.status !== 'ready');
+  if (done.length) {
+    const now = Date.now();
+    await db.update('media_files', { id: `in.(${done.map((f) => f.id).join(',')})`, deleted_at: 'is.null' },
+      { deleted_at: new Date(now).toISOString(), purge_after: new Date(now + LIMITS.DELETE_GRACE_MS).toISOString() });
+  }
+  if (rest.length) {
+    await purgeFiles(env, db, rest);
+    await db.remove('media_files', { id: `in.(${rest.map((f) => f.id).join(',')})` });
+  }
+}
+
+export async function remove({ env, db, params, admin }) {
+  const cur = await getFile(db, admin, params.id);
+  await ownedEvent(db, admin, cur.event_id); // the event must not be in the bin either
+  await binOrPurge(env, db, [cur]);
+  return { deleted_file_id: cur.id, moved_to_bin: cur.status === 'ready' };
 }
 
 // POST /admin/files/bulk  { action: "move"|"delete", file_ids: [...up to 200], folder_id?: uuid|null }
-export async function bulk({ request, env, db }) {
+export async function bulk({ request, env, db, admin }) {
   const b = await readJson(request);
   const action = v.oneOf(b.action, 'action', ['move', 'delete']);
   if (!Array.isArray(b.file_ids) || b.file_ids.length < 1 || b.file_ids.length > 200) {
     throw new ApiError(400, 'VALIDATION_ERROR', 'file_ids must contain 1 to 200 ids');
   }
   const ids = [...new Set(b.file_ids.map((i) => v.uuid(i, 'file_ids[]')))];
-  const files = await db.select('media_files', { select: COLS, id: `in.(${ids.join(',')})` });
+  const files = await db.select('media_files', { select: COLS, id: `in.(${ids.join(',')})`, deleted_at: 'is.null' });
   if (files.length !== ids.length) throw new ApiError(404, 'FILE_NOT_FOUND', 'One or more files were not found');
   const events = new Set(files.map((f) => f.event_id));
   if (events.size > 1) throw new ApiError(400, 'VALIDATION_ERROR', 'All files must belong to the same event');
+  // ownership: the one event all these files sit in must belong to the caller; otherwise they look like they do not exist
+  try { await ownedEvent(db, admin, files[0].event_id); } catch { throw new ApiError(404, 'FILE_NOT_FOUND', 'One or more files were not found'); }
   if (action === 'move') {
     const folderId = v.uuid(b.folder_id, 'folder_id', { optional: true });
     await assertFolderInEvent(db, folderId, files[0].event_id);
     await db.update('media_files', { id: `in.(${ids.join(',')})` }, { folder_id: folderId });
     return { moved: ids.length };
   }
-  await purgeFiles(env, db, files);
-  await db.remove('media_files', { id: `in.(${ids.join(',')})` });
-  return { deleted: ids.length };
+  await binOrPurge(env, db, files);
+  return { deleted: ids.length, moved_to_bin: files.filter((f) => f.status === 'ready').length };
 }
 
 // Fresh presigned PUT for a missing or replaced thumbnail. Each call gets its own key so a replaced thumbnail
 // is never served from a browser or CDN cache. Send the returned `key` to /thumbnail/confirm.
-export async function thumbnailUrl({ env, db, params }) {
-  const f = await getFile(db, params.id);
+export async function thumbnailUrl({ env, db, params, admin }) {
+  const f = await getFile(db, admin, params.id);
   const tag = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
   const key = OBJECT_KEYS.thumbV(f.event_id, f.id, tag);
   return {
@@ -81,8 +95,8 @@ export async function thumbnailUrl({ env, db, params }) {
 }
 
 // POST /admin/files/:id/thumbnail/confirm  { key? }   (no key = the original upload's canonical thumbnail key)
-export async function thumbnailConfirm({ request, env, db, params }) {
-  const f = await getFile(db, params.id);
+export async function thumbnailConfirm({ request, env, db, params, admin }) {
+  const f = await getFile(db, admin, params.id);
   const b = await readJson(request);
   const canonical = OBJECT_KEYS.thumb(f.event_id, f.id);
   let key = canonical;
@@ -106,8 +120,8 @@ export async function thumbnailConfirm({ request, env, db, params }) {
 }
 
 // GET /admin/files/:id/source  ->  { url }  Short-lived link to the original, so the admin can scrub a video to pick a thumbnail.
-export async function sourceUrl({ env, db, params }) {
-  const f = await getFile(db, params.id);
+export async function sourceUrl({ env, db, params, admin }) {
+  const f = await getFile(db, admin, params.id);
   if (f.status !== 'ready') throw new ApiError(409, 'NOT_READY', 'This upload has not finished');
   return { url: await presign(env, 'GET', f.object_key, { expires: 3600 }), media_type: f.media_type };
 }

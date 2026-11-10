@@ -301,6 +301,8 @@ export async function initUploadPage() {
   try { events = (await get('/admin/events')).events; } catch (e) { mount(app, emptyState('alert', 'Could not load events', e.message)); return; }
   if (!events.length) { mount(app, emptyState('calendar', 'Create an event first', 'Uploads go into an event.', h('a', { class: 'btn primary', href: ROUTES.events }, 'Go to events'))); return; }
 
+  let space = null; // { quota_bytes, free_bytes } so a big video can say how much of the host's space it will use
+  get('/admin/storage').then((x) => { space = x; }).catch(() => {});
   const small = matchMedia('(max-width: 720px)').matches;
   const mgr = new UploadManager({ concurrency: small ? 2 : 3 });
   const dest = { eventId: events.some((e) => e.id === params.get('event')) ? params.get('event') : null, folderId: params.get('folder') || null, path: [] };
@@ -312,7 +314,7 @@ export async function initUploadPage() {
   const zone = h('div', { class: 'dropzone', role: 'button', tabindex: '0', 'aria-label': 'Choose photos and videos' },
     h('div', { class: 'empty-ic' }, icon('upload', 28)), h('h3', null, 'Choose photos and videos'),
     h('p', { class: 'muted' }, 'Tap to pick from your gallery, or drop files here. Originals are uploaded untouched.'),
-    h('p', { class: 'hint' }, `Up to ${Math.round(CONFIG.LIMITS.IMAGE_BYTES / 1048576)} MB per photo and ${Math.round(CONFIG.LIMITS.VIDEO_BYTES / 1048576)} MB per video.`));
+    h('p', { class: 'hint' }, `Up to ${Math.round(CONFIG.LIMITS.IMAGE_BYTES / 1048576)} MB per photo and ${Math.round(CONFIG.LIMITS.VIDEO_BYTES / 1048576)} MB per video. Tip: recording video at 1080p instead of 4K often halves the size.`));
   const summary = h('section', { class: 'card pad summary', hidden: true });
   const list = h('div', { class: 'u-list' });
 
@@ -337,6 +339,14 @@ export async function initUploadPage() {
   function choose(files) {
     if (!dest.eventId) { toast('Choose an event first', 'error'); eventSel.focus(); return; }
     if (!files || !files.length) return;
+    if (space) {
+      for (const f of files) {
+        if (f.size >= 50 * 1048576 && space.quota_bytes) {
+          const pct = Math.max(1, Math.round((f.size / space.quota_bytes) * 100));
+          toast(`${f.name} will use ${pct}% of your space (${formatBytes(Math.max(0, space.free_bytes))} free). Recording at 1080p instead of 4K often halves the size.`, pct >= 50 ? 'error' : 'info', 7000);
+        }
+      }
+    }
     mgr.addFiles(files, { eventId: dest.eventId, folderId: dest.folderId });
   }
   zone.addEventListener('click', () => input.click());

@@ -43,6 +43,15 @@ export async function signIn(email, password) {
   return s;
 }
 
+// Public sign-up (email + password). With "Confirm email" ON in Supabase (recommended) there is no session yet:
+// the person must click the link in the email first. With it OFF, a session comes back and they are signed in.
+export async function signUp(email, password) {
+  // FUTURE: Turnstile. When you switch it on in Supabase, send the widget token here: { email, password, gotrue_meta_security: { captcha_token } }
+  const j = await gotrue('signup', { email, password });
+  if (j.access_token) { write(toSession(j)); return { signedIn: true }; }
+  return { signedIn: false };
+}
+
 export async function signOut() {
   const s = read();
   write(null);

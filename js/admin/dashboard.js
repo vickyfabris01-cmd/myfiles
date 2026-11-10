@@ -4,9 +4,10 @@ import { get, post } from '../api.js';
 import { h, mount, formatBytes, formatEventDate, formatDateTime, timeLeft, copyText, debounce, todayNairobi, STATE_LABEL } from '../util.js';
 import { icon } from '../icons.js';
 import { toast, showError, formDialog, confirmDialog, withBusy, loading, emptyState } from '../ui.js';
+import { usageBar } from './usage-bar.js';
 
 const state = { tab: 'active', active: [], deleted: null, q: '' };
-let listHost, statsHost, tabsHost;
+let listHost, statsHost, tabsHost, usageHost;
 
 const badge = (e) => h('span', { class: `badge ${e.state}` }, STATE_LABEL[e.state] || e.state);
 
@@ -77,7 +78,7 @@ function render() {
   const list = q ? src.filter((e) => `${e.title} ${e.location || ''}`.toLowerCase().includes(q)) : src;
   if (!list.length) {
     mount(listHost, state.tab === 'deleted'
-      ? emptyState('trash', 'Nothing pending deletion', 'Deleted events stay here for 7 days so you can restore them.')
+      ? emptyState('trash', 'Nothing pending deletion', 'Deleted events stay here for 2 days so you can restore them. Deleted folders and files are in the Bin.')
       : q ? emptyState('search', 'No matching events', 'Try a different search.')
         : emptyState('calendar', 'No events yet', 'Create your first event, then upload photos and videos.', h('button', { class: 'btn primary', type: 'button', onclick: createEvent }, icon('plus', 18), 'New event')));
     return;
@@ -140,6 +141,7 @@ async function main() {
   await requireAdmin({ active: 'events' });
   const app = document.getElementById('app');
   statsHost = h('div', { class: 'stats' });
+  usageHost = h('a', { class: 'card pad usage-compact', href: ROUTES.storage });
   tabsHost = h('div', { class: 'tabs', role: 'tablist' });
   listHost = h('div', null, loading());
   const search = h('input', { class: 'input', type: 'search', placeholder: 'Search events', 'aria-label': 'Search events' });
@@ -147,9 +149,10 @@ async function main() {
   mount(app,
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Events'), h('p', { class: 'muted' }, 'Create events, upload originals and share a private link.')),
       h('button', { class: 'btn primary', type: 'button', onclick: createEvent }, icon('plus', 18), 'New event')),
-    statsHost,
+    statsHost, usageHost,
     h('div', { class: 'toolbar' }, tabsHost, h('div', { class: 'search' }, icon('search', 18), search)),
     listHost);
+  get('/admin/storage').then((s) => mount(usageHost, h('b', null, 'Your storage'), usageBar(s), h('p', { class: 'hint' }, 'Tap for details, the recycle bin and account options.'))).catch(() => usageHost.remove());
   try { await reload(); } catch (e) { mount(listHost, emptyState('alert', 'Could not load events', e.message, h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, 'Try again'))); }
 }
 main();

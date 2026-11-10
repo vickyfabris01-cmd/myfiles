@@ -167,10 +167,10 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
   async function deleteFolder(f) {
     const ok = await confirmDialog({
       title: `Delete "${f.name}"?`, danger: true, confirmLabel: 'Delete folder',
-      message: h('div', null, h('p', null, `This permanently deletes the folder, all its subfolders and ${f.file_count} file${f.file_count === 1 ? '' : 's'}, including the original photos and videos in storage.`), h('p', { class: 'muted' }, 'This cannot be undone.')),
+      message: h('div', null, h('p', null, `The folder, its subfolders and ${f.file_count} file${f.file_count === 1 ? '' : 's'} move to the recycle bin as one item. You can restore them for 2 days, then they are permanently deleted.`), h('p', { class: 'muted' }, 'Items in the bin still use your storage.')),
     });
     if (!ok) return;
-    act(() => del(`/admin/folders/${f.id}`), 'Folder deleted');
+    act(() => del(`/admin/folders/${f.id}`), 'Folder moved to the recycle bin');
   }
 
   /* ---------- files ---------- */
@@ -276,11 +276,11 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
   async function deleteFiles(files) {
     const ok = await confirmDialog({
       title: `Delete ${files.length} file${files.length === 1 ? '' : 's'}?`, danger: true, confirmLabel: 'Delete',
-      message: 'The originals and thumbnails are permanently removed from storage. This cannot be undone.',
+      message: 'They move to the recycle bin. You can restore them for 2 days, then they are permanently deleted. Unfinished uploads are removed at once.',
     });
     if (!ok) return;
     S.selected.clear();
-    act(() => post('/admin/files/bulk', { action: 'delete', file_ids: files.map((f) => f.id) }), `Deleted ${files.length} file${files.length === 1 ? '' : 's'}`);
+    act(() => post('/admin/files/bulk', { action: 'delete', file_ids: files.map((f) => f.id) }), `Moved ${files.length} file${files.length === 1 ? '' : 's'} to the recycle bin`);
   }
 
   // Cover targets: the event, plus every folder in the current path when the file sits directly in the current folder.

@@ -70,11 +70,11 @@ async function select(db, e) {
   const coverId = await db.rpc('event_cover_file', { p_event: e.id });
   const cols = 'id,media_type,mime_type,size_bytes,object_key,thumbnail_key,created_at';
   const recent = await db.select('media_files', {
-    select: cols, event_id: `eq.${e.id}`, status: 'eq.ready', order: 'created_at.desc,id.desc', limit: 12,
+    select: cols, event_id: `eq.${e.id}`, status: 'eq.ready', deleted_at: 'is.null', order: 'created_at.desc,id.desc', limit: 12,
   });
   let cover = coverId ? recent.find((r) => r.id === coverId) : null;
   if (coverId && !cover) {
-    [cover] = await db.select('media_files', { select: cols, id: `eq.${coverId}`, limit: 1 });
+    [cover] = await db.select('media_files', { select: cols, id: `eq.${coverId}`, deleted_at: 'is.null', limit: 1 });
   }
   const files = pickFiles(cover, recent);
   const manual = e.cover_mode === 'manual' && cover && files[0] && files[0].id === cover.id;

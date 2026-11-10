@@ -15,6 +15,7 @@ let tab = (location.hash || '#media').slice(1);
 const el = {};
 
 const readOnly = () => event.state === 'pending_deletion';
+const suspended = () => !!event.suspended;
 const badge = () => h('span', { class: `badge ${event.state}` }, STATE_LABEL[event.state] || event.state);
 
 function setEvent(e) {
@@ -28,7 +29,7 @@ async function refresh() { setEvent((await get(`/admin/events/${id}`)).event); }
 /* ---------- header + banner ---------- */
 function renderHead() {
   document.title = `${event.title} - MyFiles`;
-  const actions = readOnly() ? [] : [
+  const actions = readOnly() || suspended() ? [] : [
     h('button', { class: 'btn secondary', type: 'button', onclick: openShare }, icon('link', 18), 'Share'),
     h('button', { class: 'btn secondary', type: 'button', onclick: openSchedule }, icon('clock', 18), event.publish_at || event.unpublish_at ? 'Scheduled' : 'Schedule'),
     h('button', { class: `btn ${event.is_published ? 'secondary' : 'primary'}`, type: 'button', onclick: (e) => togglePublish(e.currentTarget) },
@@ -44,6 +45,10 @@ function renderHead() {
 }
 
 function renderBanner() {
+  if (suspended() && !readOnly()) {
+    mount(el.banner, h('div', { class: 'banner danger' }, icon('alert', 20), h('div', { class: 'grow' }, h('b', null, 'This event has been suspended'), h('p', null, 'Its link is switched off and it cannot be published. Your files are not deleted.'))));
+    return;
+  }
   if (!readOnly()) { mount(el.banner); return; }
   mount(el.banner, h('div', { class: 'banner danger' },
     icon('alert', 20),
@@ -70,16 +75,16 @@ async function restore(btn) {
 }
 
 async function deleteEvent() {
-  const until = formatDateTime(new Date(Date.now() + 7 * 86400000).toISOString());
+  const until = formatDateTime(new Date(Date.now() + 2 * 86400000).toISOString());
   const ok = await confirmDialog({
     title: 'Delete this event?', danger: true, confirmLabel: 'Delete event',
     message: h('div', null,
       h('p', null, 'The event link stops working immediately.'),
-      h('p', null, `You can restore it until ${until}. After that the event, its folders and all original photos and videos are permanently deleted.`),
+      h('p', null, `It moves to the recycle bin. You can restore it until ${until}. After that the event, its folders and all original photos and videos are permanently deleted.`),
       h('p', { class: 'muted' }, 'To hide an event without deleting anything, use Unpublish instead.')),
   });
   if (!ok) return;
-  try { const r = await del(`/admin/events/${id}`); setEvent(r.event); toast('Event moved to recently deleted', 'success'); } catch (e) { showError(e); }
+  try { const r = await del(`/admin/events/${id}`); setEvent(r.event); toast('Event moved to the recycle bin', 'success'); } catch (e) { showError(e); }
 }
 
 async function openShare() {
@@ -226,7 +231,7 @@ function publishingPanel() {
     h('div', { class: 'stack' },
       h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Share link'), h('p', { class: 'hint' }, 'The same link keeps working across unpublish and publish.'), linkBox),
       h('section', { class: 'card pad danger-zone' }, h('h2', { class: 'h2' }, 'Delete event'),
-        h('p', { class: 'muted' }, 'Deleting is separate from unpublishing. The link stops working at once, and you have 7 days to restore everything.'),
+        h('p', { class: 'muted' }, 'Deleting is separate from unpublishing. The link stops working at once, and you have 2 days to restore everything from the recycle bin.'),
         h('button', { class: 'btn danger', type: 'button', onclick: deleteEvent }, icon('trash', 18), 'Delete event'))));
 }
 

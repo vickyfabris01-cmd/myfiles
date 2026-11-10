@@ -24,6 +24,7 @@ export async function urls({ request, env, db, params }) {
     select: 'id,original_filename,size_bytes,object_key,mime_type,media_type',
     event_id: `eq.${e.id}`,
     status: 'eq.ready',
+    deleted_at: 'is.null',
     id: `in.(${ids.join(',')})`,
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -54,7 +55,7 @@ export async function manifest({ env, db, params, url }) {
   const scope = sp.get('scope') === 'folder' ? 'folder' : 'event';
   const folderId = scope === 'folder' ? v.uuid(sp.get('folder_id'), 'folder_id') : null;
   if (folderId) {
-    const [f] = await db.select('media_folders', { select: 'id', id: `eq.${folderId}`, event_id: `eq.${e.id}`, limit: 1 });
+    const [f] = await db.select('media_folders', { select: 'id', id: `eq.${folderId}`, event_id: `eq.${e.id}`, deleted_at: 'is.null', limit: 1 });
     if (!f) throw new ApiError(404, 'FOLDER_NOT_FOUND', 'Folder not found');
   }
   const recursive = sp.get('recursive') !== '0';

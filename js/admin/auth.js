@@ -9,10 +9,20 @@ const LOGIN = new URL('../../admin/index.html', import.meta.url).href;
 const EVENTS = new URL('../../admin/events.html', import.meta.url).href;
 const UPLOAD = new URL('../../admin/upload.html', import.meta.url).href;
 const EDITOR = new URL('../../admin/event-editor.html', import.meta.url).href;
+const SIGNUP = new URL('../../admin/signup.html', import.meta.url).href;
+const PENDING = new URL('../../admin/pending.html', import.meta.url).href;
+const BIN = new URL('../../admin/bin.html', import.meta.url).href;
+const STORAGE = new URL('../../admin/storage.html', import.meta.url).href;
+const SUPER = new URL('../../admin/super.html', import.meta.url).href;
 
 // Central place for page links, so pages never hard-code paths.
 export const ROUTES = {
   login: LOGIN,
+  signup: SIGNUP,
+  pending: PENDING,
+  bin: BIN,
+  storage: STORAGE,
+  super: SUPER,
   events: EVENTS,
   editor: (id, folderId) => `${EDITOR}?id=${encodeURIComponent(id)}${folderId ? `&folder=${encodeURIComponent(folderId)}` : ''}`,
   upload: (eventId, folderId) => {
@@ -41,22 +51,35 @@ function toggleTheme() {
   try { localStorage.setItem('myfiles.theme', next); } catch { /* ignore */ }
 }
 
+// Where each kind of account lands after signing in.
+export function homeFor(me) {
+  if (me.status !== 'active') return PENDING;
+  return me.role === 'super_admin' ? SUPER : EVENTS;
+}
+
 export function mountHeader(admin, active) {
   const host = document.getElementById('app-header');
   if (!host) return;
   const link = (key, href, label, ic) => h('a', { class: `navlink${active === key ? ' active' : ''}`, href }, icon(ic, 18), h('span', null, label));
+  const isSuper = admin.role === 'super_admin';
+  const nav = isSuper
+    ? [link('super', SUPER, 'Dashboard', 'select')]
+    : [link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload'), link('storage', STORAGE, 'Storage', 'cloud-lock'), link('bin', BIN, 'Bin', 'trash')];
   mount(host, h('header', { class: 'topbar' }, h('div', { class: 'topbar-in' },
-    h('a', { class: 'brand', href: EVENTS }, h('span', { class: 'brand-mark' }, icon('cloud-lock', 18)), h('span', null, 'MyFiles')),
-    h('nav', { class: 'nav' }, link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload')),
+    h('a', { class: 'brand', href: isSuper ? SUPER : EVENTS }, h('span', { class: 'brand-mark' }, icon('cloud-lock', 18)), h('span', null, 'MyFiles')),
+    h('nav', { class: 'nav' }, nav),
     h('span', { class: 'spacer' }),
-    h('span', { class: 'who' }, admin.email || 'Administrator'),
+    h('span', { class: 'who' }, admin.email || 'Account'),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Toggle dark mode', onclick: toggleTheme }, icon('moon')),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Sign out', onclick: async () => { await signOut(); redirectToLogin('signed_out'); } }, icon('logout')),
   )));
 }
 
-// Call first on every admin page except sign-in. Resolves with the admin, or navigates away.
-export async function requireAdmin({ active } = {}) {
+// Call first on every account page except sign-in / sign-up. Resolves with the account, or navigates away.
+//   role 'host' (default): hosts only. The super admin is sent to the super dashboard.
+//   role 'super': the super admin only.
+//   allowInactive: for the "waiting for approval" page.
+export async function requireAdmin({ active, role = 'host', allowInactive = false } = {}) {
   if (!getSession()) return redirectToLogin();
   const app = document.getElementById('app');
   if (app) mount(app, loading());
@@ -66,10 +89,13 @@ export async function requireAdmin({ active } = {}) {
   } catch (e) {
     if (e.status === 401 || e.status === 403) {
       await signOut();
-      return redirectToLogin(e.status === 403 ? 'not_admin' : 'expired');
+      return redirectToLogin(e.code === 'EMAIL_NOT_CONFIRMED' ? 'confirm' : 'expired');
     }
     return new Promise(() => showFatal(e.message, () => location.reload()));
   }
+  if (!allowInactive && admin.status !== 'active') { location.replace(PENDING); return new Promise(() => {}); }
+  if (role === 'host' && admin.role === 'super_admin') { location.replace(SUPER); return new Promise(() => {}); }
+  if (role === 'super' && admin.role !== 'super_admin') { location.replace(EVENTS); return new Promise(() => {}); }
   mountHeader(admin, active);
   onSessionChange((s) => { if (!s) redirectToLogin('signed_out'); });
   return admin;
@@ -77,7 +103,10 @@ export async function requireAdmin({ active } = {}) {
 
 const REASONS = {
   expired: 'Your session expired. Please sign in again.',
-  not_admin: 'This account is not an administrator.',
+  not_admin: 'This account cannot sign in here.',
+  confirm: 'Please confirm your email address first. Open the link we sent you, then sign in.',
+  created: 'Account created. Check your email for the confirmation link, then sign in.',
+  deleted: 'Your account and all its files were deleted.',
   signed_out: 'You have been signed out.',
 };
 
@@ -86,7 +115,7 @@ export async function initLoginPage() {
   const reason = new URLSearchParams(location.search).get('reason');
 
   if (getSession() && !reason) {
-    try { await api('GET', '/admin/me'); location.replace(EVENTS); return; } catch { /* show the form */ }
+    try { location.replace(homeFor((await api('GET', '/admin/me')).admin)); return; } catch { /* show the form */ }
   }
 
   const msg = h('p', { class: `form-msg${reason ? ' show' : ''}`, role: 'alert' }, REASONS[reason] || '');
@@ -112,10 +141,11 @@ export async function initLoginPage() {
     submit.disabled = true; submit.textContent = 'Signing in...';
     try {
       await signIn(email.value.trim(), pass.value);
-      await api('GET', '/admin/me');
-      location.replace(EVENTS);
+      const me = (await api('GET', '/admin/me')).admin;
+      location.replace(homeFor(me));
     } catch (err) {
-      if (err.status === 403) { await signOut(); say('This account is not an administrator.'); }
+      if (err.code === 'email_not_confirmed') say(REASONS.confirm);
+      else if (err.status === 403) { await signOut(); say(err.code === 'EMAIL_NOT_CONFIRMED' ? REASONS.confirm : 'This account cannot sign in here.'); }
       else if (err.status === 400 || err.code === 'invalid_credentials') say('Wrong email or password.');
       else say(err.message || 'Could not sign in.');
       submit.disabled = false; submit.textContent = 'Sign in';
@@ -123,7 +153,7 @@ export async function initLoginPage() {
   });
 
   mount(app, h('div', { class: 'auth-card card' },
-    h('div', { class: 'auth-brand' }, h('span', { class: 'brand-mark lg' }, icon('cloud-lock', 26)), h('h1', null, 'MyFiles'), h('p', { class: 'muted' }, 'Administrator sign in')),
+    h('div', { class: 'auth-brand' }, h('span', { class: 'brand-mark lg' }, icon('cloud-lock', 26)), h('h1', null, 'MyFiles'), h('p', { class: 'muted' }, 'Sign in')),
     form,
-    h('p', { class: 'hint center' }, icon('lock', 14), ' Private area. Accounts are created by the owner only.')));
+    h('p', { class: 'hint center' }, 'New here? ', h('a', { href: SIGNUP }, 'Create an account'))));
 }

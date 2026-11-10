@@ -5,6 +5,7 @@ import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign, listParts } from './r2.js';
 import { shapeFile } from './media.js';
 import { purgeFiles } from './storage.js';
+import { ownedSession } from './owner.js';
 
 const EXT = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
@@ -21,11 +22,23 @@ function detectMime(input, filename) {
 }
 
 const mb = (n) => `${Math.round(n / 1048576)} MB`;
+const gb = (n) => `${(n / 1073741824).toFixed(n < 1073741824 * 10 ? 1 : 0)} GB`;
 
-async function getSession(db, id) {
-  const [s] = await db.select('upload_sessions', { select: '*', id: `eq.${v.uuid(id, 'session_id')}`, limit: 1 });
-  if (!s) throw new ApiError(404, 'SESSION_NOT_FOUND', 'Upload session not found');
-  return s;
+function reserveError(r) {
+  switch (r && r.reason) {
+    case 'quota': {
+      const bin = Number(r.bin_bytes) || 0;
+      const msg = bin > 0
+        ? `Your storage is full (${gb(r.used)} of ${gb(r.quota)}). Empty your recycle bin to free ${mb(bin)}, or delete files you no longer need.`
+        : `Your storage is full (${gb(r.used)} of ${gb(r.quota)}). Delete files you no longer need.`;
+      return new ApiError(413, 'QUOTA_EXCEEDED', msg, { used_bytes: Number(r.used), quota_bytes: Number(r.quota), bin_bytes: bin });
+    }
+    case 'event_not_found': return new ApiError(404, 'EVENT_NOT_FOUND', 'Event not found');
+    case 'event_deleted': return new ApiError(409, 'EVENT_DELETED', 'Restore this event before uploading');
+    case 'folder_not_found': return new ApiError(404, 'FOLDER_NOT_FOUND', 'Folder not found in this event');
+    case 'rate': return new ApiError(429, 'RATE_LIMITED', 'You are uploading too fast. Wait a minute and try again.', { retry_after: 60 });
+    default: return new ApiError(403, 'NOT_ALLOWED', 'This account cannot upload right now');
+  }
 }
 
 function assertUsable(s) {
@@ -55,23 +68,20 @@ export async function authorize({ request, env, db, admin }) {
       `${mediaType === 'video' ? 'Videos' : 'Photos'} can be at most ${mb(max)}`, { max_bytes: max });
   }
 
-  const [ev] = await db.select('events', { select: 'id,deleted_at', id: `eq.${eventId}`, limit: 1 });
-  if (!ev) throw new ApiError(404, 'EVENT_NOT_FOUND', 'Event not found');
-  if (ev.deleted_at) throw new ApiError(409, 'EVENT_DELETED', 'Restore this event before uploading');
-  if (folderId) {
-    const [f] = await db.select('media_folders', { select: 'id', id: `eq.${folderId}`, event_id: `eq.${eventId}`, limit: 1 });
-    if (!f) throw new ApiError(404, 'FOLDER_NOT_FOUND', 'Folder not found in this event');
-  }
-
   const fileId = crypto.randomUUID();
   const objectKey = OBJECT_KEYS.original(eventId, fileId);
   const multipart = size > LIMITS.SINGLE_PUT_MAX;
   const expiresAt = new Date(Date.now() + LIMITS.UPLOAD_SESSION_TTL_MS).toISOString();
 
-  await db.insert('media_files', {
-    id: fileId, event_id: eventId, folder_id: folderId, original_filename: filename, object_key: objectKey,
-    media_type: mediaType, mime_type: mime, size_bytes: size, width, height, duration_seconds: duration, status: 'uploading',
+  // One atomic step in the database: checks the host owns the event, the account is active, the rate limit,
+  // and that the host's storage (stored files + recycle bin + uploads in progress) stays within the quota.
+  // On success the space is reserved right now, so two uploads at once cannot slip past the cap.
+  const r = await db.rpc('reserve_upload', {
+    p_user: admin.id, p_event: eventId, p_folder: folderId, p_file_id: fileId, p_filename: filename, p_key: objectKey,
+    p_media_type: mediaType, p_mime: mime, p_size: size, p_width: width, p_height: height, p_duration: duration,
+    p_per_minute: LIMITS.UPLOADS_PER_MINUTE,
   });
+  if (!r || !r.ok) throw reserveError(r);
 
   let uploadId = null;
   let session;
@@ -110,9 +120,9 @@ export async function authorize({ request, env, db, admin }) {
 }
 
 // POST /admin/upload/parts  { session_id, part_numbers: [1,2,3...] (max 50) }
-export async function parts({ request, env, db }) {
+export async function parts({ request, env, db, admin }) {
   const b = await readJson(request);
-  const s = await getSession(db, b.session_id);
+  const s = await ownedSession(db, admin, b.session_id);
   if (!s.r2_upload_id) throw new ApiError(400, 'NOT_MULTIPART', 'This upload is not multipart');
   assertUsable(s);
   if (s.status === 'completed') throw new ApiError(409, 'ALREADY_COMPLETED', 'Upload already completed');
@@ -134,8 +144,8 @@ export async function parts({ request, env, db }) {
 }
 
 // GET /admin/upload/status?session_id=   (used to resume after an interruption)
-export async function status({ env, db, url }) {
-  const s = await getSession(db, url.searchParams.get('session_id'));
+export async function status({ env, db, url, admin }) {
+  const s = await ownedSession(db, admin, url.searchParams.get('session_id'));
   if (s.status === 'completed') return { status: 'completed', file_id: s.file_id };
   assertUsable(s);
   const key = OBJECT_KEYS.original(s.event_id, s.file_id);
@@ -157,9 +167,9 @@ export async function status({ env, db, url }) {
 }
 
 // POST /admin/upload/complete  { session_id }   Idempotent. Verifies the object really exists with the declared size.
-export async function complete({ request, env, db }) {
+export async function complete({ request, env, db, admin }) {
   const b = await readJson(request);
-  const s = await getSession(db, b.session_id);
+  const s = await ownedSession(db, admin, b.session_id);
   const [file] = await db.select('media_files', { select: '*', id: `eq.${s.file_id}`, limit: 1 });
   if (!file) throw new ApiError(404, 'FILE_NOT_FOUND', 'File record not found');
   if (s.status === 'completed' && file.status === 'ready') return { file: await shapeFile(env, file, true) };
@@ -210,9 +220,9 @@ export async function complete({ request, env, db }) {
 }
 
 // POST /admin/upload/abort  { session_id }   Cancels and removes everything stored so far.
-export async function abort({ request, env, db }) {
+export async function abort({ request, env, db, admin }) {
   const b = await readJson(request);
-  const s = await getSession(db, b.session_id);
+  const s = await ownedSession(db, admin, b.session_id);
   if (s.status === 'completed') throw new ApiError(409, 'ALREADY_COMPLETED', 'Upload already completed. Delete the file instead.');
   const files = await db.select('media_files', { select: 'id,event_id,object_key,thumbnail_key', id: `eq.${s.file_id}` });
   await purgeFiles(env, db, files);

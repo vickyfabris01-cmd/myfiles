@@ -10,6 +10,7 @@ try {
       a.href = '/admin/events.html';
       a.firstChild.textContent = 'Open dashboard ';
     }
+    for (const id of ['signup', 'signup2', 'signup3']) { const a = document.getElementById(id); if (a) a.hidden = true; }
   }
 } catch { /* not signed in */ }
 

@@ -55,6 +55,7 @@ export async function queryFiles(db, { eventId, folderId, p }) {
   const query = {
     select: FILE_COLS,
     event_id: `eq.${eventId}`,
+    deleted_at: 'is.null',            // files in the recycle bin never show up in a listing
     order: ORDERS[p.sort],
     limit: p.limit,
     offset: p.offset,

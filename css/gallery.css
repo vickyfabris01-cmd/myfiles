@@ -83,3 +83,7 @@ dialog.dl-panel { width: min(560px, calc(100vw - 24px)); }
 .dl-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: 12px; }
 .dl-main { display: flex; flex-direction: column; gap: 3px; } .dl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dl-main small { color: var(--muted); }
 .dl-row.failed small { color: var(--danger); } .dl-row.done small { color: var(--ok); }
+
+/* ---- report / legal links in the gallery footer ---- */
+.g-legal { margin-top: 6px; font-size: .85rem; opacity: .8; }
+.g-legal a, .linklike { color: inherit; text-decoration: underline; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
