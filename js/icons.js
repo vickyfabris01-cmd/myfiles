@@ -1,5 +1,6 @@
 // js/icons.js  -  inline SVG icons (no emoji anywhere in the UI)
 const P = {
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',

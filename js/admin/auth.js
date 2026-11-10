@@ -69,15 +69,44 @@ export function mountHeader(admin, active) {
   const nav = isSuper
     ? [link('super', SUPER, 'Dashboard', 'select')]
     : [link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload'), link('storage', STORAGE, 'Storage', 'cloud-lock'), link('bin', BIN, 'Bin', 'trash')];
-  mount(host, h('header', { class: 'topbar' }, h('div', { class: 'topbar-in' },
+  const doSignOut = async () => { await signOut(); redirectToLogin('signed_out'); };
+
+  // DESKTOP: everything in the header (unchanged). Items with `desk-only` are hidden on phones.
+  // PHONE (up to 720px): the header keeps only the logo, the name and the theme icon; the links move to a bottom bar
+  // and Install app / Sign out live in the menu (the hamburger at the end of the bottom bar).
+  const header = h('header', { class: 'topbar' }, h('div', { class: 'topbar-in' },
     h('a', { class: 'brand', href: isSuper ? SUPER : EVENTS }, h('span', { class: 'brand-mark' }, icon('cloud-lock', 18)), h('span', null, 'MyFiles')),
-    h('nav', { class: 'nav' }, nav),
+    h('nav', { class: 'nav desk-only' }, nav),
     h('span', { class: 'spacer' }),
-    h('span', { class: 'who' }, admin.email || 'Account'),
-    createInstallButton(),
+    h('span', { class: 'who desk-only' }, admin.email || 'Account'),
+    h('span', { class: 'desk-only' }, createInstallButton()),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Toggle dark mode', onclick: toggleTheme }, icon('moon')),
-    h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Sign out', onclick: async () => { await signOut(); redirectToLogin('signed_out'); } }, icon('logout')),
-  )));
+    h('button', { class: 'btn icon ghost desk-only', type: 'button', 'aria-label': 'Sign out', onclick: doSignOut }, icon('logout')),
+  ));
+
+  const tab = (key, href, label, ic) => h('a', { class: `bn-item${active === key ? ' active' : ''}`, href, 'aria-current': active === key ? 'page' : null }, icon(ic, 22), h('span', null, label));
+  const tabs = isSuper
+    ? [tab('super', SUPER, 'Dashboard', 'select')]
+    : [tab('events', EVENTS, 'Events', 'calendar'), tab('upload', UPLOAD, 'Upload', 'upload'), tab('storage', STORAGE, 'Storage', 'cloud-lock'), tab('bin', BIN, 'Bin', 'trash')];
+
+  const more = h('button', { class: 'bn-item', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'true', 'aria-expanded': 'false', 'aria-controls': 'more-sheet' }, icon('menu', 22), h('span', null, 'Menu'));
+  const sheet = h('div', { class: 'more-sheet', id: 'more-sheet', role: 'menu', hidden: true, 'aria-label': 'Account menu' },
+    h('p', { class: 'more-who' }, admin.email || 'Account'),
+    createInstallButton(),
+    h('button', { class: 'btn ghost', type: 'button', role: 'menuitem', onclick: doSignOut }, icon('logout', 18), 'Sign out'));
+  const closeMenu = (refocus) => { if (sheet.hidden) return; sheet.hidden = true; more.setAttribute('aria-expanded', 'false'); if (refocus) more.focus(); };
+  more.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sheet.hidden = !sheet.hidden;
+    more.setAttribute('aria-expanded', String(!sheet.hidden));
+    if (!sheet.hidden) { const first = sheet.querySelector('button:not([hidden])'); if (first) first.focus(); }
+  });
+  sheet.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => closeMenu(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(true); });
+
+  mount(host, header, h('nav', { class: 'bottom-nav', 'aria-label': 'Main' }, tabs, more), sheet);
+  document.body.classList.add('has-bottom-nav'); // makes room for the bottom bar on phones (see css/admin.css)
 }
 
 // Call first on every account page except sign-in / sign-up. Resolves with the account, or navigates away.
