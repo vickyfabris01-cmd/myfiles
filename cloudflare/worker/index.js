@@ -78,7 +78,7 @@ const ROUTES = [
   ['GET', '/admin/storage', 'admin', 'host', usage.storage],
   ['POST', '/admin/account/delete', 'admin', 'host', usage.deleteAccount],
 
-  // super admin (counts and sizes only, never event content)
+  // super admin (counts and sizes only; reports also carry the names needed to review them and one openable file)
   ['GET', '/super/overview', 'admin', 'super', sup.overview],
   ['GET', '/super/hosts', 'admin', 'super', sup.hosts],
   ['PATCH', '/super/settings', 'admin', 'super', sup.updateSettings],
@@ -87,6 +87,7 @@ const ROUTES = [
   ['POST', '/super/hosts/:id/restore', 'admin', 'super', sup.hostAction('restore')],
   ['POST', '/super/hosts/:id/storage', 'admin', 'super', sup.addStorage],
   ['GET', '/super/reports', 'admin', 'super', sup.reports],
+  ['GET', '/super/reports/:id/media', 'admin', 'super', sup.reportMedia],   // the one reported file, only while the report is open
   ['POST', '/super/reports/:id/dismiss', 'admin', 'super', sup.dismissReport],
   ['POST', '/super/reports/:id/suspend-event', 'admin', 'super', sup.suspendEvent],
   ['POST', '/super/reports/:id/unsuspend-event', 'admin', 'super', sup.unsuspendEvent],

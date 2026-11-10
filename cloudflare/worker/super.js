@@ -1,11 +1,15 @@
 // cloudflare/worker/super.js
-// Super admin routes. They return ONLY counts, sizes, host emails/status and report text.
-// Never event titles, files, folders or share links.
+// Super admin routes.
+//  * Overview, host list and storage: counts, sizes, host names/emails and status only. Never titles, files or links.
+//  * Reports: the report text plus the names needed to review it (host, event title, folder, file name).
+//    The reported file itself can be opened ONLY while its report is open, and every opening is counted on the report.
 import { ApiError, v, readJson } from './utils.js';
 import { clearAuthCache } from './auth.js';
+import { presign } from './r2.js';
 
 const num = (x) => Number(x) || 0;
 const settingsRow = async (db) => (await db.select('app_settings', { select: '*', limit: 1 }))[0];
+const MEDIA_LINK_SECONDS = 600;
 
 async function overviewData(db) {
   const t = (await db.rpc('system_totals')) || {};
@@ -21,7 +25,7 @@ export async function overview({ db }) { return overviewData(db); }
 
 export async function hosts({ db }) {
   const rows = (await db.rpc('super_host_list')) || [];
-  return { hosts: rows.map((r) => ({ id: r.user_id, email: r.email, status: r.status, events: num(r.events), used_bytes: num(r.used_bytes), quota_bytes: num(r.quota_bytes), created_at: r.created_at })) };
+  return { hosts: rows.map((r) => ({ id: r.user_id, email: r.email, name: r.display_name || null, status: r.status, events: num(r.events), used_bytes: num(r.used_bytes), quota_bytes: num(r.quota_bytes), created_at: r.created_at })) };
 }
 
 // PATCH /super/settings  { approval_required?: bool, r2_budget_bytes?: int }
@@ -75,7 +79,23 @@ export async function addStorage({ request, db, params }) {
 export async function reports({ db, url }) {
   const openOnly = url.searchParams.get('status') !== 'all';
   const rows = (await db.rpc('super_reports_list', { p_open_only: openOnly })) || [];
-  return { reports: rows.map((r) => ({ id: r.id, host_email: r.host_email, reason: r.reason, status: r.status, report_count: num(r.report_count), event_suspended: !!r.event_suspended, created_at: r.created_at })) };
+  return {
+    reports: rows.map((r) => ({
+      id: r.id,
+      host_email: r.host_email,
+      host_name: r.host_name || null,
+      reason: r.reason,
+      status: r.status,
+      event_title: r.event_title || null,
+      folder_name: r.folder_name || null,
+      file_name: r.file_name || null,
+      has_file: !!r.has_file,                   // the named file still exists and can be opened (only while the report is open)
+      media_views: num(r.media_views),
+      report_count: num(r.report_count),
+      event_suspended: !!r.event_suspended,
+      created_at: r.created_at,
+    })),
+  };
 }
 
 async function report(db, id) {
@@ -85,6 +105,20 @@ async function report(db, id) {
   return { ...r, host_id: e && e.created_by };
 }
 const resolveAll = (db, eventId, status) => db.update('reports', { event_id: `eq.${eventId}`, status: 'eq.open' }, { status, resolved_at: new Date().toISOString() });
+
+// GET /super/reports/:id/media  ->  { url, media_type, filename, expires_in }
+// A short-lived link to the ONE file named in the report. Only while the report is open ("held for review"),
+// and every opening is counted on the report (media_views) so there is a record that it was looked at.
+export async function reportMedia({ env, db, params }) {
+  const [r] = await db.select('reports', { select: 'id,event_id,file_id,status,media_views', id: `eq.${v.uuid(params.id, 'id')}`, limit: 1 });
+  if (!r) throw new ApiError(404, 'REPORT_NOT_FOUND', 'Report not found');
+  if (r.status !== 'open') throw new ApiError(409, 'REPORT_CLOSED', 'This report is closed, so its file can no longer be opened.');
+  if (!r.file_id) throw new ApiError(404, 'NO_FILE', 'This report does not name a file.');
+  const [f] = await db.select('media_files', { select: 'id,object_key,original_filename,media_type,status', id: `eq.${r.file_id}`, event_id: `eq.${r.event_id}`, limit: 1 });
+  if (!f || f.status !== 'ready') throw new ApiError(404, 'FILE_GONE', 'This file no longer exists.');
+  await db.update('reports', { id: `eq.${r.id}` }, { media_views: num(r.media_views) + 1, media_last_viewed_at: new Date().toISOString() });
+  return { url: await presign(env, 'GET', f.object_key, { expires: MEDIA_LINK_SECONDS }), media_type: f.media_type, filename: f.original_filename, expires_in: MEDIA_LINK_SECONDS };
+}
 
 // POST /super/reports/:id/dismiss | suspend-event | unsuspend-event | suspend-host
 export async function dismissReport({ db, params }) {

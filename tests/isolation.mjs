@@ -9,6 +9,7 @@ let pass = 0, fail = 0;
 const check = (n, c) => { c ? pass++ : (fail++, console.log('FAIL', n)); if (c) console.log('PASS', n); };
 const U = (n) => `${n}0000000-0000-4000-8000-000000000000`;
 const USERS = { tokA: U(1), tokB: U(2), tokC: U(3), tokD: U(4), tokS: U(5) };
+const META = { tokQ: '  Quinn   Host\u0007  ' }; // the name typed at sign-up, as Supabase returns it in user_metadata
 const env = {
   ALLOWED_ORIGINS: 'https://app.pages.dev', SUPABASE_URL: 'http://supabase.test', SUPABASE_ANON_KEY: 'a', SUPABASE_SERVICE_KEY: 's',
   TOKEN_ENC_KEY: Buffer.alloc(32, 1).toString('base64'), PUBLIC_SITE_URL: 'https://site.test',
@@ -77,8 +78,14 @@ const RPC = {
     return { ok: true, used: used + a.p_size, quota: 2147483648 };
   },
   system_totals: () => ({ hosts: 4, pending: 1, events: T.events.length, bytes_used: 0 }),
-  super_host_list: () => T.profiles.filter((p) => p.role === 'host').map((p) => ({ user_id: p.user_id, email: p.email, status: p.status, events: 0, used_bytes: 0, quota_bytes: 2147483648, created_at: 'x' })),
-  super_reports_list: () => T.reports.map((r) => ({ id: r.id, event_id: r.event_id, host_id: own2(r.event_id), host_email: (T.profiles.find((p) => p.user_id === own2(r.event_id)) || {}).email, reason: r.reason, status: r.status, report_count: 1, event_suspended: !!T.events.find((e) => e.id === r.event_id).suspended_at, created_at: r.created_at })),
+  super_host_list: () => T.profiles.filter((p) => p.role === 'host').map((p) => ({ user_id: p.user_id, email: p.email, display_name: p.display_name || null, status: p.status, events: 0, used_bytes: 0, quota_bytes: 2147483648, created_at: 'x' })),
+  super_reports_list: () => T.reports.map((r) => {
+    const e = T.events.find((x) => x.id === r.event_id); const p = T.profiles.find((x) => x.user_id === e.created_by) || {};
+    return { id: r.id, event_id: r.event_id, host_id: e.created_by, host_email: p.email, host_name: p.display_name || null, reason: r.reason, status: r.status,
+      event_title: r.event_title || e.title, folder_name: r.folder_name || null, file_name: r.file_name || null,
+      has_file: !!r.file_id && T.media_files.some((m) => m.id === r.file_id && m.status === 'ready'), media_views: r.media_views || 0,
+      report_count: 1, event_suspended: !!e.suspended_at, created_at: r.created_at };
+  }),
 };
 
 globalThis.fetch = async (input, init = {}) => {
@@ -87,7 +94,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.pathname === '/auth/v1/user') {
     const tok = (init.headers.Authorization || '').replace('Bearer ', '');
     const id = USERS[tok];
-    return id ? j({ id, email: `${tok}@x.test`, email_confirmed_at: '2026-01-01' }) : j({ msg: 'bad' }, 401);
+    return id ? j({ id, email: `${tok}@x.test`, email_confirmed_at: '2026-01-01', user_metadata: META[tok] ? { display_name: META[tok] } : {} }) : j({ msg: 'bad' }, 401);
   }
   if (url.pathname.startsWith('/auth/v1/admin/users/')) return j({});
   const m = /^\/rest\/v1\/(rpc\/)?([a-z_]+)$/.exec(url.pathname);
@@ -96,7 +103,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (m[1]) { const f = RPC[m[2]]; if (!f) return j({ msg: 'no rpc ' + m[2] }, 500); const out = f(body || {}); return j(out === undefined ? null : out); }
   const table = T[m[2]]; const params = [...url.searchParams.entries()];
   if (init.method === 'GET') { let rows = table.filter((r) => matchRow(r, params)); const lim = url.searchParams.get('limit'); if (lim) rows = rows.slice(0, Number(lim)); return new Response(JSON.stringify(rows.map((r) => withEmbed(m[2], r))), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Range': `0-${rows.length}/${rows.length}` } }); }
-  if (init.method === 'POST') { const rows = (Array.isArray(body) ? body : [body]).map((r) => ({ id: uuid(), created_at: new Date().toISOString(), deleted_at: null, ...r })); if (m[2] === 'profiles' && table.some((p) => p.user_id === body.user_id)) return j({ code: '23505' }, 409); table.push(...rows); return j(rows, 201); }
+  if (init.method === 'POST') { const rows = (Array.isArray(body) ? body : [body]).map((r) => ({ id: uuid(), created_at: new Date().toISOString(), deleted_at: null, ...(m[2] === 'reports' ? { status: 'open', media_views: 0, media_last_viewed_at: null } : {}), ...r })); if (m[2] === 'profiles' && table.some((p) => p.user_id === body.user_id)) return j({ code: '23505' }, 409); table.push(...rows); return j(rows, 201); }
   if (init.method === 'PATCH') { const hit = table.filter((r) => matchRow(r, params)); hit.forEach((r) => Object.assign(r, body)); return j(hit); }
   if (init.method === 'DELETE') { const hit = table.filter((r) => matchRow(r, params)); hit.forEach((r) => table.splice(table.indexOf(r), 1)); return j(hit); }
   return j({}, 500);
@@ -187,6 +194,8 @@ check('new sign-in creates a PENDING profile while approval is ON', await (async
 T.app_settings[0].approval_required = false;
 check('new sign-in is ACTIVE when approval is OFF', await (async () => { USERS.tokM = U(7); const r = await call('tokM', 'GET', '/admin/me'); return r.data.admin.status === 'active'; })());
 T.app_settings[0].approval_required = true;
+check('the name typed at sign-up is saved on the profile (trimmed, control characters removed)', await (async () => { USERS.tokQ = U(8); const r = await call('tokQ', 'GET', '/admin/me'); return r.data.admin.name === 'Quinn Host' && T.profiles.find((p) => p.user_id === U(8)).display_name === 'Quinn Host'; })());
+check('a profile without a name returns name: null', (await call('tokC', 'GET', '/admin/me')).data.admin.name === null);
 
 /* ---------------- 3. super admin sees counts only ---------------- */
 const sh = await call('tokS', 'GET', '/super/hosts'); const so = await call('tokS', 'GET', '/super/overview');
@@ -259,7 +268,7 @@ fixedIp = null;
 check('report on an unknown link is refused', (await call(null, 'POST', '/event/' + 'x'.repeat(30) + '/report', { reason: 'abc' })).status === 404);
 check('too-short report is refused', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'x' })).status === 400);
 const rl = await call('tokS', 'GET', '/super/reports');
-check('super admin sees the report as a notification, with host email but no title or link', rl.data.reports.length === 1 && rl.data.reports[0].host_email === 'a@x.test' && !/SECRET|WEDDING|\/e\//.test(rl.text));
+check('super admin sees the report with host email and event title, but never the share link', rl.data.reports.length === 1 && rl.data.reports[0].host_email === 'a@x.test' && rl.data.reports[0].event_title === 'SECRET WEDDING' && !/\/e\/|share_token/.test(rl.text));
 const rid = rl.data.reports[0].id;
 await call('tokS', 'POST', `/super/reports/${rid}/suspend-event`);
 check('suspending an event from the report stops its link at once', (await call(null, 'POST', '/event/validate', { token: TOKEN_A })).code === 'EVENT_UNAVAILABLE' && T.events.find((e) => e.id === EA).suspended_at);
@@ -272,6 +281,58 @@ await call('tokS', 'POST', `/super/hosts/${U(1)}/suspend`);
 check('suspending a HOST stops their links and uploads at once (data kept)', (await call(null, 'POST', '/event/validate', { token: TOKEN_A })).code === 'EVENT_UNAVAILABLE' && (await call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, filename: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 10 })).code === 'ACCOUNT_SUSPENDED' && T.events.find((e) => e.id === EA));
 await call('tokS', 'POST', `/super/hosts/${U(1)}/restore`);
 check('restoring the host brings the link back', (await call(null, 'POST', '/event/validate', { token: TOKEN_A })).status === 200);
+
+
+/* ---------------- 6b. report details: folder, optional file, names kept, super admin can open the file ---------------- */
+T.profiles.find((p) => p.user_id === U(1)).display_name = 'Alice Host';
+const FILEA3 = uuid(); mkFile(FILEA3, null); R2.objects.add(`events/${EA}/originals/${FILEA3}`);
+const reportsBefore = T.reports.length;
+const rf1 = await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'Private photo shared without permission', file_id: FILEA2, folder_id: uuid() });
+const newest = T.reports.at(-1);
+check('report naming a file is saved; the file\'s real folder wins over what the browser sent', rf1.status === 200 && T.reports.length === reportsBefore + 1 && newest.file_id === FILEA2 && newest.folder_id === FA && newest.folder_name === 'Folder A');
+check('the event title and file name are copied onto the report', newest.event_title === 'SECRET WEDDING' && newest.file_name === T.media_files.find((f) => f.id === FILEA2).original_filename);
+check('reporting a folder only (no file) works and records its name', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'Whole folder is a problem', folder_id: FA })).status === 200 && T.reports.at(-1).folder_name === 'Folder A' && T.reports.at(-1).file_id === null);
+check('reporting without folder or file still works (event-level report)', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'Event itself is a problem' })).status === 200 && T.reports.at(-1).file_id === null && T.reports.at(-1).folder_name === null);
+check('a file or folder id that is not in this event is refused', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'abc def', file_id: uuid() })).code === 'FILE_NOT_FOUND' && (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'abc def', folder_id: uuid() })).code === 'FOLDER_NOT_FOUND');
+check('a malformed file id is rejected, never crashes', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'abc def', file_id: 'nope' })).status === 400);
+T.media_files.find((f) => f.id === FILEA3).deleted_at = new Date().toISOString();
+check('a file in the host\'s recycle bin cannot be reported (visitors never see it)', (await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'abc def', file_id: FILEA3 })).code === 'FILE_NOT_FOUND');
+T.media_files.find((f) => f.id === FILEA3).deleted_at = null;
+fixedIp = '203.0.113.50';
+const n0 = T.reports.length;
+await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'Same file twice', file_id: FILEA3 });
+await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'Same file twice', file_id: FILEA3 });
+check('the same person reporting the same file twice does not spam the list', T.reports.length === n0 + 1);
+await call(null, 'POST', `/event/${TOKEN_A}/report`, { reason: 'A different file', file_id: FILEA2 });
+check('...but a different file from the same person is a new report', T.reports.length === n0 + 2);
+fixedIp = null;
+
+// rename things afterwards: the report still shows what was reported
+const reportedFileName = newest.file_name;
+T.media_files.find((f) => f.id === FILEA2).original_filename = 'renamed-after-report.jpg';
+T.media_folders.find((f) => f.id === FA).name = 'Renamed folder';
+const rl2 = await call('tokS', 'GET', '/super/reports');
+const mine = rl2.data.reports.find((r) => r.id === newest.id);
+check('super admin report shows host name, event title, folder and file name from the snapshot', mine && mine.host_name === 'Alice Host' && mine.host_email === 'a@x.test' && mine.event_title === 'SECRET WEDDING' && mine.folder_name === 'Folder A' && mine.file_name === reportedFileName && mine.has_file === true);
+check('super admin list never includes the share link or storage keys', !/\/e\/|share_token|originals|object_key/.test(rl2.text));
+const shN = await call('tokS', 'GET', '/super/hosts');
+check('super admin host list carries the host name', shN.data.hosts.find((h) => h.email === 'a@x.test').name === 'Alice Host' && shN.data.hosts.find((h) => h.email === 'b@x.test').name === null);
+
+// opening the reported file
+const m1 = await call('tokS', 'GET', `/super/reports/${newest.id}/media`);
+check('super admin can open the reported file while the report is open', m1.status === 200 && m1.data.media_type === 'photo' && m1.data.url.includes(`originals/${FILEA2}`) && m1.data.expires_in === 600);
+await call('tokS', 'GET', `/super/reports/${newest.id}/media`);
+check('every opening is counted on the report', T.reports.find((r) => r.id === newest.id).media_views === 2 && !!T.reports.find((r) => r.id === newest.id).media_last_viewed_at);
+const noFile = T.reports.find((r) => !r.file_id && r.status === 'open');
+check('a report that names no file has nothing to open', (await call('tokS', 'GET', `/super/reports/${noFile.id}/media`)).code === 'NO_FILE');
+check('a host cannot open a reported file', (await call(B, 'GET', `/super/reports/${newest.id}/media`)).code === 'NOT_SUPER_ADMIN' && (await call(null, 'GET', `/super/reports/${newest.id}/media`)).status === 401);
+check('an unknown report id gives 404, a malformed one 400', (await call('tokS', 'GET', `/super/reports/${uuid()}/media`)).code === 'REPORT_NOT_FOUND' && (await call('tokS', 'GET', '/super/reports/nope/media')).status === 400);
+T.media_files.find((f) => f.id === FILEA2).status = 'uploading';
+check('a file that is no longer finished or present cannot be opened', (await call('tokS', 'GET', `/super/reports/${newest.id}/media`)).code === 'FILE_GONE');
+T.media_files.find((f) => f.id === FILEA2).status = 'ready';
+await call('tokS', 'POST', `/super/reports/${newest.id}/dismiss`);
+const closed = await call('tokS', 'GET', `/super/reports/${newest.id}/media`);
+check('once the report is closed its file can no longer be opened', closed.status === 409 && closed.code === 'REPORT_CLOSED' && T.reports.find((r) => r.id === newest.id).media_views === 2);
 
 /* ---------------- 7. delete my account ---------------- */
 check('delete account needs the word DELETE', (await call('tokA', 'POST', '/admin/account/delete', { confirm: 'no' })).status === 400);

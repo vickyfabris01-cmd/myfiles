@@ -8,6 +8,9 @@ import { ApiError } from './utils.js';
 
 const cache = new Map(); // token -> { user, until }
 
+// The name typed at sign-up arrives in Supabase's user_metadata.display_name. Keep it short and free of control characters.
+const cleanName = (x) => (typeof x === 'string' ? x.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || null : null);
+
 async function verifyToken(request, env) {
   const m = /^Bearer\s+(.+)$/i.exec(request.headers.get('Authorization') || '');
   if (!m) throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in required');
@@ -22,7 +25,7 @@ async function verifyToken(request, env) {
   const u = await res.json();
   if (!u || !u.id) throw new ApiError(401, 'INVALID_TOKEN', 'Session is invalid or expired');
   if (!u.email_confirmed_at) throw new ApiError(403, 'EMAIL_NOT_CONFIRMED', 'Confirm your email address first');
-  const user = { id: u.id, email: u.email || '' };
+  const user = { id: u.id, email: u.email || '', name: cleanName(u.user_metadata && u.user_metadata.display_name) };
   if (cache.size > 200) cache.clear();
   cache.set(token, { user, until: Date.now() + 30000 });
   return user;
@@ -30,13 +33,13 @@ async function verifyToken(request, env) {
 
 // First sign-in of a new account creates its profile: pending when approval is ON, otherwise active.
 async function loadProfile(db, user) {
-  const cols = 'user_id,email,role,status';
+  const cols = 'user_id,email,display_name,role,status';
   let [p] = await db.select('profiles', { select: cols, user_id: `eq.${user.id}`, limit: 1 });
   if (p) return p;
   const [s] = await db.select('app_settings', { select: 'approval_required', limit: 1 });
   const approval = s ? s.approval_required : true;
   try {
-    [p] = await db.insert('profiles', { user_id: user.id, email: user.email, role: 'host', status: approval ? 'pending' : 'active' });
+    [p] = await db.insert('profiles', { user_id: user.id, email: user.email, display_name: user.name || null, role: 'host', status: approval ? 'pending' : 'active' });
   } catch (e) {
     if (e.status !== 409) throw e;
     [p] = await db.select('profiles', { select: cols, user_id: `eq.${user.id}`, limit: 1 });
@@ -47,7 +50,7 @@ async function loadProfile(db, user) {
 export async function requireUser(request, env, db, mode = 'host') {
   const user = await verifyToken(request, env);
   const p = await loadProfile(db, user);
-  const me = { id: user.id, email: p.email || user.email, role: p.role, status: p.status };
+  const me = { id: user.id, email: p.email || user.email, name: p.display_name || null, role: p.role, status: p.status };
   if (mode === 'any') return me;
   if (p.status === 'suspended') throw new ApiError(403, 'ACCOUNT_SUSPENDED', 'This account has been suspended');
   if (p.status === 'pending') throw new ApiError(403, 'ACCOUNT_PENDING', 'This account is waiting for approval');
