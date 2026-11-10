@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Offline - MyFiles</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f6f7fb; color: #1b1d2a; }
+    @media (prefers-color-scheme: dark) { body { background: #12131a; color: #eceefb; } .card { background: #1b1d2a !important; } }
+    .card { max-width: 420px; background: #fff; border-radius: 20px; padding: 32px 26px; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+    .logo { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 14px; display: block; }
+    h1 { font-size: 1.3rem; margin: 0 0 8px; } p { margin: 0 0 18px; opacity: .75; }
+    button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 12px 22px; background: #4f5bd5; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img class="logo" src="/icons/icon-192.png" alt="">
+    <h1>You are offline</h1>
+    <p>MyFiles needs an internet connection to load your events and to upload. Your files are safe. Check your connection and try again.</p>
+    <button type="button" onclick="location.reload()">Try again</button>
+  </main>
+</body>
+</html>

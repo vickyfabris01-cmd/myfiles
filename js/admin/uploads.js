@@ -4,10 +4,11 @@ import { api, get, qs } from '../api.js';
 import { CONFIG } from '../config.js';
 import { requireAdmin, ROUTES } from './auth.js';
 import { makeThumbnail } from './thumbs.js';
+import { readTakenAt } from './taken.js';
 import { pickFolder } from './folders.js';
 import { h, mount, formatBytes } from '../util.js';
 import { icon } from '../icons.js';
-import { toast, showError, loading, emptyState } from '../ui.js';
+import { toast, showError, loading, emptyState, openModal } from '../ui.js';
 
 /* ================= helpers ================= */
 const EXT = {
@@ -52,6 +53,61 @@ export function xhrPut(url, blob, { contentType, onProgress, signal } = {}) {
 
 const friendly = (e) => (e && (e.status === 0 || e.code === 'NETWORK') ? 'Connection lost. Tap Retry to continue where it stopped.' : (e && e.message) || 'Upload failed');
 
+/* ================= duplicate warning ================= */
+async function sha256Hex(file) {
+  const buf = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Looks only at the place the files are going: the chosen folder, or the event's top level when no folder is chosen.
+// Returns { duplicates: [{ file, reason, existing }], hashes: Map(file -> sha256) }. A failed check never blocks the upload.
+export async function findDuplicates(files, { eventId, folderId, call = api }) {
+  const list = Array.from(files).filter((f) => kindOf(f) && f.size > 0);
+  const hashes = new Map();
+  for (const f of list) {
+    if (kindOf(f) === 'photo' && f.size <= CONFIG.LIMITS.IMAGE_BYTES) { try { hashes.set(f, await sha256Hex(f)); } catch { /* no hash: quick check only */ } }
+  }
+  const dups = new Map();
+  const seenKey = new Map(); const seenHash = new Map();
+  for (const f of list) { // the same file picked twice in one selection
+    const key = `${f.name}\u0000${f.size}`; const hash = hashes.get(f);
+    if (seenKey.has(key) || (hash && seenHash.has(hash))) dups.set(f, { file: f, reason: 'in_selection', existing: (seenKey.get(key) || seenHash.get(hash)).name });
+    else { seenKey.set(key, f); if (hash) seenHash.set(hash, f); }
+  }
+  try {
+    const todo = list.filter((f) => !dups.has(f));
+    for (const part of chunkArr(todo, 100)) {
+      const body = { event_id: eventId, files: part.map((f) => ({ name: f.name, size: f.size, hash: hashes.get(f) || undefined })) };
+      if (folderId) body.folder_id = folderId;
+      const r = await call('POST', '/admin/upload/check', body);
+      for (const x of r.results) if (x.duplicate) dups.set(part[x.index], { file: part[x.index], reason: x.duplicate, existing: x.existing_filename });
+    }
+  } catch { /* offline or server hiccup: upload normally */ }
+  return { duplicates: [...dups.values()], hashes };
+}
+
+const REASON = {
+  same_name_size: (where) => `a file with the same name and size is already ${where}`,
+  same_content: (where) => `the same photo (identical content) is already ${where}`,
+  in_selection: () => 'you selected it twice',
+};
+
+// choice: 'skip' | 'all' | null (cancel)
+function duplicateDialog(dups, where) {
+  return new Promise((resolve) => {
+    const shown = dups.slice(0, 8);
+    const body = h('div', { class: 'stack' },
+      h('p', null, `${dups.length} of the files you picked look like duplicates. Only files ${where} were compared.`),
+      h('ul', { class: 'dup-list' }, shown.map((d) => h('li', null, h('b', null, d.file.name), h('span', { class: 'muted small' }, ` - ${REASON[d.reason](where)}`)))),
+      dups.length > shown.length ? h('p', { class: 'muted small' }, `and ${dups.length - shown.length} more`) : null);
+    const cancel = h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close(null) }, 'Cancel');
+    const all = h('button', { class: 'btn secondary', type: 'button', onclick: () => m.close('all') }, 'Upload anyway');
+    const skip = h('button', { class: 'btn primary', type: 'button', onclick: () => m.close('skip') }, 'Skip duplicates');
+    const m = openModal({ title: 'Possible duplicates', body, footer: [cancel, all, skip], className: 'small' });
+    m.closed.then((v) => resolve(v === 'skip' || v === 'all' ? v : null));
+  });
+}
+
 /* ================= engine ================= */
 const STORE_KEY = 'myfiles.uploads';
 
@@ -65,11 +121,11 @@ export class UploadManager {
   _emit() { this.subs.forEach((f) => f(this)); }
 
   /* ----- queue ----- */
-  addFiles(files, { eventId, folderId = null }) {
+  addFiles(files, { eventId, folderId = null, hashes = null }) {
     const added = [];
     for (const file of Array.from(files)) {
       const kind = kindOf(file);
-      const it = { id: ++this.seq, file, name: file.name, size: file.size, kind, eventId, folderId, status: 'queued', loaded: 0, error: null, warning: null, fatal: false, resumed: false, sessionId: null, fileId: null, previewUrl: null, meta: null, restarts: 0, netFail: false, result: null, abort: new AbortController() };
+      const it = { id: ++this.seq, file, name: file.name, size: file.size, kind, eventId, folderId, status: 'queued', loaded: 0, error: null, warning: null, fatal: false, resumed: false, sessionId: null, fileId: null, previewUrl: null, meta: null, contentHash: (hashes && hashes.get(file)) || null, takenAt: undefined, restarts: 0, netFail: false, result: null, abort: new AbortController() };
       const maxBytes = kind === 'video' ? CONFIG.LIMITS.VIDEO_BYTES : CONFIG.LIMITS.IMAGE_BYTES;
       if (!kind) Object.assign(it, { status: 'failed', fatal: true, error: 'Only photos and videos can be uploaded' });
       else if (file.size === 0) Object.assign(it, { status: 'failed', fatal: true, error: 'This file is empty' });
@@ -147,6 +203,10 @@ export class UploadManager {
     if (!info) {
       const body = { event_id: item.eventId, filename: item.name, mime_type: guessMime(item.file), size_bytes: item.size };
       if (item.folderId) body.folder_id = item.folderId;
+      // date taken (read from the file's first bytes) decides where it sorts; none = sorts by upload time
+      if (item.takenAt === undefined) item.takenAt = await readTakenAt(item.file, item.kind);
+      if (item.takenAt) body.taken_at = item.takenAt;
+      if (item.contentHash) body.content_hash = item.contentHash;
       if (meta.width && meta.height) { body.width = meta.width; body.height = meta.height; }
       if (meta.duration != null) body.duration_seconds = meta.duration;
       info = await this.call('POST', '/admin/upload/authorize', body);
@@ -336,9 +396,28 @@ export async function initUploadPage() {
     if (r) { dest.folderId = r.folderId; refreshPath(); }
   });
 
-  function choose(files) {
+  let checking = false;
+  async function choose(fileList) {
     if (!dest.eventId) { toast('Choose an event first', 'error'); eventSel.focus(); return; }
-    if (!files || !files.length) return;
+    if (!fileList || !fileList.length || checking) return;
+    let files = Array.from(fileList);
+    checking = true; zone.classList.add('busy');
+    let hashes = null;
+    try {
+      const where = dest.folderId ? 'in this folder' : 'at the top level of this event';
+      const found = await findDuplicates(files, { eventId: dest.eventId, folderId: dest.folderId });
+      hashes = found.hashes;
+      if (found.duplicates.length) {
+        const choice = await duplicateDialog(found.duplicates, where);
+        if (!choice) return;
+        if (choice === 'skip') {
+          const skipSet = new Set(found.duplicates.map((d) => d.file));
+          files = files.filter((f) => !skipSet.has(f));
+          toast(`Skipped ${skipSet.size} duplicate${skipSet.size === 1 ? '' : 's'}`, 'info');
+        }
+      }
+    } finally { checking = false; zone.classList.remove('busy'); }
+    if (!files.length) return;
     if (space) {
       for (const f of files) {
         if (f.size >= 50 * 1048576 && space.quota_bytes) {
@@ -347,7 +426,7 @@ export async function initUploadPage() {
         }
       }
     }
-    mgr.addFiles(files, { eventId: dest.eventId, folderId: dest.folderId });
+    mgr.addFiles(files, { eventId: dest.eventId, folderId: dest.folderId, hashes });
   }
   zone.addEventListener('click', () => input.click());
   zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });

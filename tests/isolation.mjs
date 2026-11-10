@@ -74,7 +74,7 @@ const RPC = {
     if (e.deleted_at) return { ok: false, reason: 'event_deleted' };
     const used = fileUsed(a.p_user);
     if (used + a.p_size > 2147483648) return { ok: false, reason: 'quota', used, quota: 2147483648, bin_bytes: 5 * 1048576 };
-    T.media_files.push({ id: a.p_file_id, event_id: a.p_event, folder_id: a.p_folder, original_filename: a.p_filename, object_key: a.p_key, media_type: a.p_media_type, mime_type: a.p_mime, size_bytes: a.p_size, status: 'uploading', thumbnail_key: null, deleted_at: null, purge_after: null, bin_group: null });
+    T.media_files.push({ id: a.p_file_id, event_id: a.p_event, folder_id: a.p_folder, original_filename: a.p_filename, object_key: a.p_key, media_type: a.p_media_type, mime_type: a.p_mime, size_bytes: a.p_size, taken_at: a.p_taken ?? null, content_hash: a.p_hash ?? null, status: 'uploading', thumbnail_key: null, deleted_at: null, purge_after: null, bin_group: null });
     return { ok: true, used: used + a.p_size, quota: 2147483648 };
   },
   system_totals: () => ({ hosts: 4, pending: 1, events: T.events.length, bytes_used: 0 }),
@@ -157,6 +157,7 @@ const attacks = [
   ['POST', '/admin/files/bulk', { action: 'delete', file_ids: [FILEA, FILEA2] }], ['POST', '/admin/files/bulk', { action: 'move', file_ids: [FILEA], folder_id: null }],
   ['POST', '/admin/upload/authorize', { event_id: EA, filename: 'x.jpg', mime_type: 'image/jpeg', size_bytes: 10 }],
   ['POST', '/admin/upload/authorize', { event_id: EA, folder_id: FA, filename: 'x.jpg', mime_type: 'image/jpeg', size_bytes: 10 }],
+  ['POST', '/admin/upload/check', { event_id: EA, files: [{ name: 'a.jpg', size: 1000 }] }], ['POST', '/admin/upload/check', { event_id: EA, folder_id: FA, files: [{ name: 'a.jpg', size: 1000 }] }],
   ['POST', '/admin/upload/parts', { session_id: SA, part_numbers: [1] }], ['GET', `/admin/upload/status?session_id=${SA}`],
   ['POST', '/admin/upload/complete', { session_id: SA }], ['POST', '/admin/upload/abort', { session_id: SA }],
   ['POST', '/admin/bin/restore', { kind: 'event', id: EA }], ['POST', '/admin/bin/restore', { kind: 'folder', id: FA }], ['POST', '/admin/bin/restore', { kind: 'file', id: FILEA }],
@@ -223,6 +224,29 @@ check('normal upload is authorized for the owner', ok1.status === 201 && ok1.dat
 for (let i = 0; i < 4; i++) await call('tokA', 'POST', '/admin/events', { title: 'E' + i, event_date: '2026-01-01' });
 const sixth = await call('tokA', 'POST', '/admin/events', { title: 'E6', event_date: '2026-01-01' });
 check('6th active event is blocked with a clear message (EVENT_LIMIT)', sixth.status === 409 && sixth.code === 'EVENT_LIMIT' && /at most 5/.test(JSON.parse(sixth.text).error.message));
+
+/* ---------------- 4b. date taken + duplicate warning ---------------- */
+const dt = await call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, filename: 'dated.jpg', mime_type: 'image/jpeg', size_bytes: 321, taken_at: '2021-03-04T05:06:07.000Z', content_hash: 'b'.repeat(64) });
+const dtRow = T.media_files.find((f) => f.id === dt.data.file_id);
+check('upload stores the date taken and the photo hash', dt.status === 201 && dtRow.taken_at === '2021-03-04T05:06:07.000Z' && dtRow.content_hash === 'b'.repeat(64));
+const bad1 = await call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, filename: 'future.jpg', mime_type: 'image/jpeg', size_bytes: 322, taken_at: '2099-01-01T00:00:00Z', content_hash: 'ZZ' });
+const bad1Row = T.media_files.find((f) => f.id === bad1.data.file_id);
+check('an impossible date taken or a malformed hash is ignored, not trusted', bad1.status === 201 && bad1Row.taken_at === null && bad1Row.content_hash === null);
+const vid = await call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, filename: 'clip.mp4', mime_type: 'video/mp4', size_bytes: 5000, taken_at: '2022-01-01T00:00:00Z', content_hash: 'c'.repeat(64) });
+check('videos never store a content hash (quick check only)', T.media_files.find((f) => f.id === vid.data.file_id).content_hash === null);
+// scope: top level has dated.jpg / future.jpg / clip.mp4 / ok.jpg ; folder FA has two 1000-byte files named after their ids
+const top = await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, files: [{ name: 'dated.jpg', size: 321 }, { name: 'other.jpg', size: 321 }, { name: 'x.jpg', size: 9, hash: 'b'.repeat(64) }, { name: 'clip.mp4', size: 5000 }] });
+check('top level: same name+size is a duplicate', top.data.results[0].duplicate === 'same_name_size' && top.data.results[0].existing_filename === 'dated.jpg');
+check('top level: same size but different name is NOT a duplicate', top.data.results[1].duplicate === null);
+check('top level: identical photo content is a duplicate even with another name', top.data.results[2].duplicate === 'same_content' && top.data.results[2].existing_filename === 'dated.jpg');
+check('top level: a video is checked by name+size only', top.data.results[3].duplicate === 'same_name_size');
+const inFolder = await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, folder_id: FA, files: [{ name: 'dated.jpg', size: 321 }, { name: 'x.jpg', size: 9, hash: 'b'.repeat(64) }, { name: T.media_files.find((f) => f.id === FILEA).original_filename, size: 1000 }] });
+check('inside a folder, files at the top level are NOT counted as duplicates', inFolder.data.results[0].duplicate === null && inFolder.data.results[1].duplicate === null);
+check('inside a folder, files of that same folder ARE duplicates', inFolder.data.results[2].duplicate === 'same_name_size');
+const subCheck = await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, files: [{ name: T.media_files.find((f) => f.id === FILEA).original_filename, size: 1000 }] });
+check('at top level, files inside a folder are NOT counted as duplicates', subCheck.data.results[0].duplicate === null);
+check('duplicate check rejects too many files and bad input', (await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, files: [] })).status === 400 && (await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, files: [{ name: 'a', size: 0 }] })).status === 400);
+check('duplicate check on a folder of another event is refused', (await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, folder_id: uuid(), files: [{ name: 'a.jpg', size: 1 }] })).status === 404);
 
 /* ---------------- 5. recycle bin behaviour ---------------- */
 const delF = await call('tokA', 'DELETE', `/admin/folders/${FA}`);

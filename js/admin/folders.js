@@ -100,8 +100,8 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
     const chip = (key, label) => h('button', { class: `chip${S.type === key ? ' active' : ''}`, type: 'button', onclick: () => { S.type = key; renderToolbar(); load(true); } }, label);
     const search = h('input', { class: 'input', type: 'search', placeholder: 'Search filename', value: S.q, 'aria-label': 'Search by filename' });
     search.addEventListener('input', debounce(() => { S.q = search.value.trim(); load(true); }, 350));
-    const sort = h('select', { class: 'input sort', 'aria-label': 'Sort', value: S.sort, onchange: (e) => { S.sort = e.target.value; load(true); } },
-      h('option', { value: 'newest' }, 'Newest'), h('option', { value: 'oldest' }, 'Oldest'), h('option', { value: 'filename' }, 'Filename'));
+    const sort = h('select', { class: 'input sort', 'aria-label': 'Sort by date', value: S.sort, onchange: (e) => { S.sort = e.target.value; load(true); } },
+      h('option', { value: 'newest' }, 'Date: newest first'), h('option', { value: 'oldest' }, 'Date: oldest first'));
     mount(toolbarHost,
       S.ro ? null : h('div', { class: 'row gap-s wrap' },
         h('button', { class: 'btn secondary', type: 'button', onclick: createFolder }, icon('folder-plus', 18), 'New folder'),
@@ -228,7 +228,7 @@ export function mountBrowser(root, { event, readOnly = false, onChanged = () => 
 
   function openFile(f) {
     const rows = [['Type', f.media_type === 'video' ? 'Video' : 'Photo'], ['Size', formatBytes(f.size_bytes)], f.width && f.height ? ['Dimensions', `${f.width} x ${f.height}`] : null,
-      f.duration_seconds != null ? ['Duration', formatDuration(f.duration_seconds)] : null, ['Format', f.mime_type], ['Added', formatDateTime(f.created_at)], ['Status', f.status === 'ready' ? 'Ready' : f.status === 'uploading' ? 'Incomplete upload' : 'Failed']].filter(Boolean);
+      f.duration_seconds != null ? ['Duration', formatDuration(f.duration_seconds)] : null, ['Format', f.mime_type], f.taken_at ? ['Taken', formatDateTime(f.taken_at)] : null, ['Added', formatDateTime(f.created_at)], ['Status', f.status === 'ready' ? 'Ready' : f.status === 'uploading' ? 'Incomplete upload' : 'Failed']].filter(Boolean);
     const m = openModal({
       title: f.filename, className: 'small',
       body: h('div', { class: 'stack' },

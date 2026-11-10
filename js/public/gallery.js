@@ -91,8 +91,8 @@ export function mountGallery(root, { token, eventTitle, onUnavailable }) {
     const chip = (k, label) => h('button', { class: `g-chip${S.type === k ? ' active' : ''}`, type: 'button', 'aria-pressed': String(S.type === k), onclick: () => { S.type = k; renderToolbar(); load(); } }, label);
     const search = h('input', { class: 'input', type: 'search', placeholder: 'Search by filename', value: S.q, 'aria-label': 'Search by filename', enterkeyhint: 'search' });
     search.addEventListener('input', debounce(() => { S.q = search.value.trim(); load(); }, 350));
-    const sort = h('select', { class: 'input g-sort', 'aria-label': 'Sort', value: S.sort, onchange: (e) => { S.sort = e.target.value; load(); } },
-      h('option', { value: 'newest' }, 'Newest first'), h('option', { value: 'oldest' }, 'Oldest first'), h('option', { value: 'filename' }, 'Filename'));
+    const sort = h('select', { class: 'input g-sort', 'aria-label': 'Sort by date', value: S.sort, onchange: (e) => { S.sort = e.target.value; load(); } },
+      h('option', { value: 'newest' }, 'Date: newest first'), h('option', { value: 'oldest' }, 'Date: oldest first'));
     mount(toolbar,
       h('div', { class: 'g-search' }, icon('search', 18), search),
       h('div', { class: 'g-controls' },

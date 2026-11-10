@@ -11,12 +11,12 @@ function write(s) {
   listeners.forEach((f) => f(s));
 }
 
-async function gotrue(path, body, token) {
+async function gotrue(path, body, token, method = 'POST') {
   const headers = { apikey: CONFIG.SUPABASE_ANON_KEY, 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {
-    res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/${path}`, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+    res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/${path}`, { method, headers, body: method === 'GET' ? undefined : JSON.stringify(body || {}) });
   } catch {
     const e = new Error('Cannot reach the server. Check your connection.'); e.status = 0; throw e;
   }
@@ -50,6 +50,27 @@ export async function signUp(email, password) {
   const j = await gotrue('signup', { email, password });
   if (j.access_token) { write(toSession(j)); return { signedIn: true }; }
   return { signedIn: false };
+}
+
+// Forgot password: Supabase emails a link that opens `redirectTo` with a short-lived recovery token in the address (after the #).
+// The answer is always the same whether or not the email has an account, so nobody can use this to find out who is registered.
+export async function requestPasswordReset(email, redirectTo) {
+  await gotrue(`recover?redirect_to=${encodeURIComponent(redirectTo)}`, { email });
+}
+
+// Reads what Supabase put in the address of the reset page. { token } for a good link, { error } for a used/expired one.
+export function parseAuthRedirect(hash = '', search = '') {
+  const p = new URLSearchParams(String(hash).replace(/^#/, ''));
+  const q = new URLSearchParams(String(search).replace(/^\?/, ''));
+  const get = (k) => p.get(k) || q.get(k);
+  if (get('error') || get('error_code')) return { error: get('error_description') || get('error_code') || get('error') };
+  if (get('access_token') && get('type') === 'recovery') return { token: get('access_token') };
+  return {};
+}
+
+// Sets the new password using the recovery token. It does NOT sign the person in: they sign in with the new password afterwards.
+export async function updatePassword(accessToken, password) {
+  await gotrue('user', { password }, accessToken, 'PUT');
 }
 
 export async function signOut() {

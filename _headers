@@ -17,3 +17,18 @@
   X-Frame-Options: DENY
   X-Robots-Tag: noindex, nofollow
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; media-src 'self' blob: https://*.r2.cloudflarestorage.com; connect-src 'self' https://*.workers.dev https://*.r2.cloudflarestorage.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+
+# --- PWA (zip 2) ---
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache
+
+/offline.html
+  X-Robots-Tag: noindex
+
+/icons/*
+  Cache-Control: public, max-age=604800

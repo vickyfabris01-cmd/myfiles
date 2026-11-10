@@ -1,0 +1,23 @@
+{
+  "name": "MyFiles",
+  "short_name": "MyFiles",
+  "description": "Upload your event photos and videos and share one private link.",
+  "id": "/admin/",
+  "start_url": "/admin/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#4f5bd5",
+  "lang": "en",
+  "categories": ["photo", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Upload", "short_name": "Upload", "url": "/admin/upload.html", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "My events", "short_name": "Events", "url": "/admin/events.html", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

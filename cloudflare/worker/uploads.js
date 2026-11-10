@@ -5,7 +5,7 @@ import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign, listParts } from './r2.js';
 import { shapeFile } from './media.js';
 import { purgeFiles } from './storage.js';
-import { ownedSession } from './owner.js';
+import { ownedSession, ownedEvent, ownedFolder } from './owner.js';
 
 const EXT = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp',
@@ -41,6 +41,16 @@ function reserveError(r) {
   }
 }
 
+// Date taken, as read by the browser from the photo's EXIF or the video's header. Anything that is not a plausible date is ignored
+// (the file then sorts by its upload time).
+function parseTaken(x) {
+  if (typeof x !== 'string') return null;
+  const t = Date.parse(x);
+  if (Number.isNaN(t) || t < Date.UTC(1990, 0, 1) || t > Date.now() + 2 * 86400000) return null;
+  return new Date(t).toISOString();
+}
+const parseHash = (x) => (typeof x === 'string' && /^[0-9a-f]{64}$/.test(x) ? x : null);
+
 function assertUsable(s) {
   if (s.status === 'aborted' || s.status === 'expired' || Date.parse(s.expires_at) < Date.now()) {
     throw new ApiError(410, 'UPLOAD_EXPIRED', 'This upload session has expired. Start the upload again.');
@@ -58,10 +68,12 @@ export async function authorize({ request, env, db, admin }) {
   const width = v.int(b.width, 'width', { min: 1, max: 100000, optional: true });
   const height = v.int(b.height, 'height', { min: 1, max: 100000, optional: true });
   const duration = v.num(b.duration_seconds, 'duration_seconds', { min: 0, max: 86400 * 3, optional: true });
+  const takenAt = parseTaken(b.taken_at);
 
   const mime = detectMime(b.mime_type, filename);
   if (!mime) throw new ApiError(415, 'UNSUPPORTED_MEDIA', 'Only photo and video files are supported');
   const mediaType = mime.startsWith('video/') ? 'video' : 'photo';
+  const hash = mediaType === 'photo' ? parseHash(b.content_hash) : null;
   const max = mediaType === 'video' ? LIMITS.MAX_VIDEO_BYTES : LIMITS.MAX_IMAGE_BYTES;
   if (size > max) {
     throw new ApiError(413, 'FILE_TOO_LARGE',
@@ -79,7 +91,7 @@ export async function authorize({ request, env, db, admin }) {
   const r = await db.rpc('reserve_upload', {
     p_user: admin.id, p_event: eventId, p_folder: folderId, p_file_id: fileId, p_filename: filename, p_key: objectKey,
     p_media_type: mediaType, p_mime: mime, p_size: size, p_width: width, p_height: height, p_duration: duration,
-    p_per_minute: LIMITS.UPLOADS_PER_MINUTE,
+    p_per_minute: LIMITS.UPLOADS_PER_MINUTE, p_taken: takenAt, p_hash: hash,
   });
   if (!r || !r.ok) throw reserveError(r);
 
@@ -228,4 +240,45 @@ export async function abort({ request, env, db, admin }) {
   await purgeFiles(env, db, files);
   await db.remove('media_files', { id: `eq.${s.file_id}` }); // cascades the session
   return { aborted: true };
+}
+
+// POST /admin/upload/check  { event_id, folder_id?, files: [{ name, size, hash? }] (max 100) }
+// Duplicate warning. It compares ONLY inside the place the files are going to: the chosen folder, or the event's top level when
+// no folder is chosen. Subfolders and other folders are not looked at.
+//   "same_name_size": a file with the same name and size is already there (quick check, used for all files).
+//   "same_content":   a photo with identical bytes (SHA-256) is already there (photos only; large videos use the quick check).
+export async function check({ request, db, admin }) {
+  const b = await readJson(request);
+  const eventId = (await ownedEvent(db, admin, b.event_id)).id;
+  const folderId = v.uuid(b.folder_id, 'folder_id', { optional: true });
+  if (folderId) {
+    const f = await ownedFolder(db, admin, folderId);
+    if (f.event_id !== eventId) throw new ApiError(404, 'FOLDER_NOT_FOUND', 'Folder not found in this event');
+  }
+  if (!Array.isArray(b.files) || b.files.length < 1 || b.files.length > 100) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'files must contain 1 to 100 items');
+  }
+  const files = b.files.map((f, i) => ({
+    i, name: v.str(f && f.name, 'name', { max: 255 }), size: v.int(f && f.size, 'size', { min: 1 }), hash: parseHash(f && f.hash),
+  }));
+  const scope = { event_id: `eq.${eventId}`, folder_id: folderId ? `eq.${folderId}` : 'is.null', deleted_at: 'is.null', status: 'in.(ready,uploading)' };
+  const sizes = [...new Set(files.map((f) => f.size))];
+  const hashes = [...new Set(files.map((f) => f.hash).filter(Boolean))];
+  const bySize = new Map();
+  for (let k = 0; k < sizes.length; k += 100) {
+    const rows = await db.select('media_files', { select: 'original_filename,size_bytes', ...scope, size_bytes: `in.(${sizes.slice(k, k + 100).join(',')})` });
+    for (const r of rows) bySize.set(`${r.original_filename}\u0000${r.size_bytes}`, r.original_filename);
+  }
+  const byHash = new Map();
+  for (let k = 0; k < hashes.length; k += 100) {
+    const rows = await db.select('media_files', { select: 'original_filename,content_hash', ...scope, content_hash: `in.(${hashes.slice(k, k + 100).join(',')})` });
+    for (const r of rows) byHash.set(r.content_hash, r.original_filename);
+  }
+  return {
+    results: files.map((f) => {
+      if (f.hash && byHash.has(f.hash)) return { index: f.i, duplicate: 'same_content', existing_filename: byHash.get(f.hash) };
+      const n = bySize.get(`${f.name}\u0000${f.size}`);
+      return n ? { index: f.i, duplicate: 'same_name_size', existing_filename: n } : { index: f.i, duplicate: null };
+    }),
+  };
 }

@@ -64,6 +64,7 @@ const ROUTES = [
   ['POST', '/admin/files/:id/thumbnail/confirm', 'admin', 'host', fi.thumbnailConfirm],
 
   // admin: uploads
+  ['POST', '/admin/upload/check', 'admin', 'host', up.check],
   ['POST', '/admin/upload/authorize', 'admin', 'host', up.authorize],
   ['POST', '/admin/upload/parts', 'admin', 'host', up.parts],
   ['GET', '/admin/upload/status', 'admin', 'host', up.status],

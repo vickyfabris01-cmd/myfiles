@@ -9,12 +9,12 @@ const HERO_MAX_BYTES = 12 * 1024 * 1024;
 const pct = (n) => (Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 50);
 
 export const FILE_COLS =
-  'id,event_id,folder_id,original_filename,media_type,mime_type,size_bytes,width,height,duration_seconds,thumbnail_key,status,created_at';
+  'id,event_id,folder_id,original_filename,media_type,mime_type,size_bytes,width,height,duration_seconds,thumbnail_key,status,created_at,taken_at';
 
+// The only sort is by DATE. sort_date = the date the photo/video was taken, or the upload time when that is unknown.
 const ORDERS = {
-  newest: 'created_at.desc,id.desc',
-  oldest: 'created_at.asc,id.asc',
-  filename: 'sort_name.asc,id.asc',
+  newest: 'sort_date.desc,id.desc',
+  oldest: 'sort_date.asc,id.asc',
 };
 
 export const thumbUrl = (env, key) => (key ? presign(env, 'GET', key, { stable: true }) : Promise.resolve(null));
@@ -31,6 +31,7 @@ export async function shapeFile(env, row, admin = false) {
     height: row.height,
     duration_seconds: row.duration_seconds,
     created_at: row.created_at,
+    taken_at: row.taken_at || null,
     thumbnail_url: await thumbUrl(env, row.thumbnail_key),
   };
   if (admin) { out.status = row.status; out.event_id = row.event_id; }

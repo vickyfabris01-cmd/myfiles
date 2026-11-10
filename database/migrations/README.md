@@ -5,3 +5,7 @@ Every later change goes in a new numbered file (002_*.sql, ...) and schema.sql i
 ## Public hosting (step 1)
 `003_public_hosting.sql` turns the single-owner app into a many-host service (accounts, ownership, quotas, recycle bin for
 folders and files, suspension, reports). Run it ONCE, after `schema.sql` and `002`. Read the STEPS at the top of the file first.
+
+## Date taken and duplicate warning (zip 2)
+`005_date_taken_and_duplicates.sql` adds the date a photo/video was taken, a "sort by date" column, and a photo content hash used
+for the duplicate warning. Run it ONCE, after 003 and 004. It does not delete anything.

@@ -106,7 +106,7 @@ export class Viewer {
     const bits = [formatBytes(f.size_bytes)];
     if (f.width && f.height) bits.push(`${f.width} x ${f.height}`);
     if (f.media_type === 'video' && f.duration_seconds != null) bits.push(formatDuration(f.duration_seconds));
-    bits.push(formatDateTime(f.created_at).replace(/, \d.*$/, ''));
+    bits.push(formatDateTime(f.taken_at || f.created_at).replace(/, \d.*$/, ''));
     this.metaEl.textContent = bits.join(' - ');
     this.counter.textContent = `${index + 1} / ${this.hasMore() ? `${files.length}+` : files.length}`;
     this.prevBtn.disabled = index === 0;

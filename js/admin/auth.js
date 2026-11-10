@@ -1,5 +1,8 @@
 // js/admin/auth.js  -  sign-in page, route guard, header with logout. Backend authorization stays authoritative.
 import { signIn, signOut, getSession, onSessionChange } from '../supabase.js';
+import { registerServiceWorker, createInstallButton } from '../pwa.js';
+
+registerServiceWorker();
 import { api } from '../api.js';
 import { h, mount } from '../util.js';
 import { icon } from '../icons.js';
@@ -14,6 +17,7 @@ const PENDING = new URL('../../admin/pending.html', import.meta.url).href;
 const BIN = new URL('../../admin/bin.html', import.meta.url).href;
 const STORAGE = new URL('../../admin/storage.html', import.meta.url).href;
 const SUPER = new URL('../../admin/super.html', import.meta.url).href;
+const FORGOT = new URL('../../admin/forgot.html', import.meta.url).href;
 
 // Central place for page links, so pages never hard-code paths.
 export const ROUTES = {
@@ -70,6 +74,7 @@ export function mountHeader(admin, active) {
     h('nav', { class: 'nav' }, nav),
     h('span', { class: 'spacer' }),
     h('span', { class: 'who' }, admin.email || 'Account'),
+    createInstallButton(),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Toggle dark mode', onclick: toggleTheme }, icon('moon')),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Sign out', onclick: async () => { await signOut(); redirectToLogin('signed_out'); } }, icon('logout')),
   )));
@@ -132,7 +137,8 @@ export async function initLoginPage() {
   const form = h('form', { class: 'form', novalidate: true },
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Email'), email),
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Password'), h('div', { class: 'input-wrap' }, pass, eye)),
-    msg, submit);
+    msg, submit,
+    h('p', { class: 'hint center' }, h('a', { href: FORGOT }, 'Forgot your password?')));
 
   const say = (text) => { msg.textContent = text; msg.classList.add('show'); };
   form.addEventListener('submit', async (e) => {

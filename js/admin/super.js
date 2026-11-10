@@ -7,6 +7,8 @@ import { icon } from '../icons.js';
 import { toast, showError, confirmDialog, formDialog, withBusy, loading, emptyState } from '../ui.js';
 
 const GB = 1024 ** 3;
+// width through element.style: an inline style="" attribute is blocked by the page's CSP
+const fill = (pct) => { const el = h('span', { class: 'bar-fill' }); el.style.width = `${pct}%`; return el; };
 const S = { overview: null, hosts: [], reports: [], showAll: false };
 let host;
 
@@ -26,7 +28,7 @@ function overviewCard() {
     h('div', { class: 'stats' }, stat(t.hosts, t.hosts === 1 ? 'Host' : 'Hosts'), stat(t.pending, 'Waiting approval'), stat(t.events, 'Events'), stat(formatBytes(t.bytes_used), 'Stored')),
     h('section', { class: 'card pad' },
       h('h2', { class: 'h2' }, 'R2 storage'),
-      h('div', { class: 'bar lg' }, h('span', { class: 'bar-fill', style: `width:${pct}%` })),
+      h('div', { class: 'bar lg' }, fill(pct)),
       h('p', { class: 'hint' }, `${formatBytes(t.bytes_used)} used of your ${formatBytes(s.r2_budget_bytes)} budget. ${formatBytes(t.r2_left_bytes)} left. `,
         'R2 has no fixed size, so this budget is just a number you choose (for example the 10 GB free tier, or 100 GB). It limits how much storage you can give to hosts.'),
       h('button', { class: 'btn secondary sm', type: 'button', onclick: editBudget }, icon('edit', 16), 'Change R2 budget')));
@@ -92,7 +94,7 @@ function hostRow(u) {
     h('div', { class: 'grow' },
       h('div', { class: 'row gap-s wrap' }, h('b', null, u.email), h('span', { class: `badge ${u.status === 'active' ? 'published' : u.status === 'pending' ? 'scheduled' : 'suspended'}` }, u.status)),
       h('p', { class: 'muted small' }, `${u.events} active event${u.events === 1 ? '' : 's'} - ${formatBytes(u.used_bytes)} of ${formatBytes(u.quota_bytes)} used`),
-      h('div', { class: 'bar' }, h('span', { class: 'bar-fill', style: `width:${pct}%` }))),
+      h('div', { class: 'bar' }, fill(pct))),
     h('div', { class: 'row gap-s wrap' },
       u.status === 'pending' ? h('button', { class: 'btn primary sm', type: 'button', onclick: hostAction(u, 'approve', 'Host approved') }, icon('check', 16), 'Approve') : null,
       u.status === 'suspended' ? h('button', { class: 'btn primary sm', type: 'button', onclick: hostAction(u, 'restore', 'Host restored') }, icon('restore', 16), 'Restore') : null,
