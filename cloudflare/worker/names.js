@@ -27,9 +27,16 @@ const extOf = (name, mime) => {
 
 // file: { original_filename, mime_type, taken_at, created_at, name_is_custom }
 export function downloadName({ event, folder, file }) {
-  if (file.name_is_custom && file.original_filename) return file.original_filename;
+  if ((file.name_is_custom || file.name_applied) && file.original_filename) return file.original_filename;   // already stored (by the host, or by the convention)
   const when = stamp(file.taken_at || file.created_at);
   const base = [part(event) || 'event', folder ? part(folder) : null, when].filter(Boolean).join('_');
   const ext = extOf(file.original_filename, file.mime_type);
   return ext ? `${base}.${ext}` : base;
+}
+
+// "X.jpg" -> "X-2.jpg" for the 2nd file that would get the same name in the same folder
+export function withSuffix(name, n) {
+  if (n < 2) return name;
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? `${name.slice(0, dot)}-${n}${name.slice(dot)}` : `${name}-${n}`;
 }

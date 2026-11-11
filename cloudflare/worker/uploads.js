@@ -1,5 +1,6 @@
 // cloudflare/worker/uploads.js
 // Upload authorization. Bytes never pass through the Worker: the browser PUTs straight to R2.
+import { nameForUpload } from './renamer.js';
 import { ApiError, v, readJson, created } from './utils.js';
 import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign, listParts } from './r2.js';
@@ -80,6 +81,7 @@ export async function authorize({ request, env, db, admin }) {
       `${mediaType === 'video' ? 'Videos' : 'Photos'} can be at most ${mb(max)}`, { max_bytes: max });
   }
 
+  const storedName = await nameForUpload(db, { eventId, ownerId: admin.id, folderId, filename, mime, takenAt });   // Event_Folder_time.ext
   const fileId = crypto.randomUUID();
   const objectKey = OBJECT_KEYS.original(eventId, fileId);
   const multipart = size > LIMITS.SINGLE_PUT_MAX;
@@ -89,11 +91,14 @@ export async function authorize({ request, env, db, admin }) {
   // and that the host's storage (stored files + recycle bin + uploads in progress) stays within the quota.
   // On success the space is reserved right now, so two uploads at once cannot slip past the cap.
   const r = await db.rpc('reserve_upload', {
-    p_user: admin.id, p_event: eventId, p_folder: folderId, p_file_id: fileId, p_filename: filename, p_key: objectKey,
+    p_user: admin.id, p_event: eventId, p_folder: folderId, p_file_id: fileId, p_filename: storedName, p_key: objectKey,
     p_media_type: mediaType, p_mime: mime, p_size: size, p_width: width, p_height: height, p_duration: duration,
     p_per_minute: LIMITS.UPLOADS_PER_MINUTE, p_taken: takenAt, p_hash: hash,
   });
   if (!r || !r.ok) throw reserveError(r);
+  // keep the camera name for the duplicate warning, and mark the convention name as stored (best effort: the upload does not depend on it)
+  if (storedName !== filename) await db.update('media_files', { id: `eq.${fileId}` }, { source_filename: filename, name_applied: true }).catch((e) => console.error('source name failed', e && e.message));
+  else await db.update('media_files', { id: `eq.${fileId}` }, { source_filename: filename }).catch(() => {});
 
   let uploadId = null;
   let session;
@@ -266,13 +271,13 @@ export async function check({ request, db, admin }) {
   const hashes = [...new Set(files.map((f) => f.hash).filter(Boolean))];
   const bySize = new Map();
   for (let k = 0; k < sizes.length; k += 100) {
-    const rows = await db.select('media_files', { select: 'original_filename,size_bytes', ...scope, size_bytes: `in.(${sizes.slice(k, k + 100).join(',')})` });
-    for (const r of rows) bySize.set(`${r.original_filename}\u0000${r.size_bytes}`, r.original_filename);
+    const rows = await db.select('media_files', { select: 'original_filename,source_filename,size_bytes', ...scope, size_bytes: `in.(${sizes.slice(k, k + 100).join(',')})` });
+    for (const r of rows) bySize.set(`${r.source_filename || r.original_filename}\u0000${r.size_bytes}`, r.source_filename || r.original_filename);
   }
   const byHash = new Map();
   for (let k = 0; k < hashes.length; k += 100) {
-    const rows = await db.select('media_files', { select: 'original_filename,content_hash', ...scope, content_hash: `in.(${hashes.slice(k, k + 100).join(',')})` });
-    for (const r of rows) byHash.set(r.content_hash, r.original_filename);
+    const rows = await db.select('media_files', { select: 'original_filename,source_filename,content_hash', ...scope, content_hash: `in.(${hashes.slice(k, k + 100).join(',')})` });
+    for (const r of rows) byHash.set(r.content_hash, r.source_filename || r.original_filename);
   }
   return {
     results: files.map((f) => {

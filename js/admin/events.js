@@ -120,6 +120,18 @@ async function adjustCover() {
 }
 
 /* ---------- details panel ---------- */
+// Files are named Event_Folder_YYYY-MM-DD-HH-MM-SS.ext automatically. This button also names files uploaded before that existed.
+function namingCard(ro) {
+  const btn = h('button', { class: 'btn secondary sm', type: 'button', disabled: ro, onclick: async (e) => {
+    if (!(await confirmDialog({ title: 'Apply the naming to all files?', confirmLabel: 'Rename files', message: 'Every file in this event is renamed to Event_Folder_Date-Time, for example "Amina-Wedding_Reception_2026-11-11-11-18-54.jpg". Files you renamed by hand keep their names. Nothing else changes.' }))) return;
+    await withBusy(e.currentTarget, async () => {
+      try { const r = await post(`/admin/events/${id}/rename-files`); toast(r.renamed ? `${r.renamed} file${r.renamed === 1 ? '' : 's'} renamed` : 'All files already follow the naming', 'success'); } catch (err) { showError(err); }
+    });
+  } }, icon('edit', 16), 'Apply to all files');
+  return h('div', { class: 'stack' }, h('h3', { class: 'h3' }, 'File names'),
+    h('p', { class: 'hint' }, 'New uploads are named Event_Folder_Date-Time automatically, and the names follow when you rename the event or a folder, or move files. A name you type yourself on a file is never changed.'), h('div', null, btn));
+}
+
 function detailsPanel() {
   const ro = readOnly();
   const f = {
@@ -154,7 +166,7 @@ function detailsPanel() {
   } }, label);
 
   return h('div', { class: 'two-col' },
-    h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Event details'), form),
+    h('section', { class: 'card pad stack' }, h('h2', { class: 'h2' }, 'Event details'), form, namingCard(ro)),
     h('section', { class: 'card pad' }, h('h2', { class: 'h2' }, 'Cover'),
       h('div', { class: 'cover wide' }, event.cover_url ? h('img', { src: event.cover_url, alt: 'Current cover', decoding: 'async', style: `object-position:${event.cover_pos_x ?? 50}% ${event.cover_pos_y ?? 50}%` }) : h('div', { class: 'cover-ph' }, icon('image', 32))),
       event.cover_url && event.cover_mode === 'manual' && !ro ? h('div', { class: 'row gap-s' }, h('button', { class: 'btn secondary sm', type: 'button', onclick: adjustCover }, icon('move', 16), 'Adjust position')) : null,

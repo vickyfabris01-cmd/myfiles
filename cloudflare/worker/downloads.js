@@ -28,7 +28,7 @@ export async function urls({ request, env, db, params }) {
   const ids = [...new Set(b.file_ids.map((id) => v.uuid(id, 'file_ids[]')))];
   const inline = b.disposition === 'inline';
   const rows = await db.select('media_files', {
-    select: 'id,original_filename,size_bytes,object_key,mime_type,media_type,folder_id,taken_at,created_at,name_is_custom',
+    select: 'id,original_filename,size_bytes,object_key,mime_type,media_type,folder_id,taken_at,created_at,name_is_custom,name_applied',
     event_id: `eq.${e.id}`,
     status: 'eq.ready',
     deleted_at: 'is.null',

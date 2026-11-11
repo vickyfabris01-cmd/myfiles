@@ -28,7 +28,7 @@ const matchRow = (row, params) => {
     const x = row[k];
     if (op === 'eq') { if (String(x) !== val) return false; }
     else if (op === 'neq') { if (String(x) === val) return false; }
-    else if (op === 'in') { if (!val.slice(1, -1).split(',').includes(String(x))) return false; }
+    else if (op === 'in') { if (!val.slice(1, -1).split(',').map((t) => t.replace(/^"|"$/g, '')).includes(String(x))) return false; }
     else if (op === 'is') { if (val === 'null' ? (x !== null && x !== undefined) : x === null) return false; }
     else if (op === 'not') { if (val === 'is.null' ? (x === null || x === undefined) : false) return false; }
     else if (op === 'lte') { if (!(x <= val)) return false; }
@@ -74,12 +74,13 @@ const RPC = {
     if (e.deleted_at) return { ok: false, reason: 'event_deleted' };
     const used = fileUsed(a.p_user);
     if (used + a.p_size > 2147483648) return { ok: false, reason: 'quota', used, quota: 2147483648, bin_bytes: 5 * 1048576 };
-    T.media_files.push({ id: a.p_file_id, event_id: a.p_event, folder_id: a.p_folder, original_filename: a.p_filename, object_key: a.p_key, media_type: a.p_media_type, mime_type: a.p_mime, size_bytes: a.p_size, taken_at: a.p_taken ?? null, content_hash: a.p_hash ?? null, status: 'uploading', thumbnail_key: null, deleted_at: null, purge_after: null, bin_group: null });
+    T.media_files.push({ id: a.p_file_id, event_id: a.p_event, folder_id: a.p_folder, original_filename: a.p_filename, object_key: a.p_key, media_type: a.p_media_type, mime_type: a.p_mime, size_bytes: a.p_size, taken_at: a.p_taken ?? null, created_at: new Date().toISOString(), content_hash: a.p_hash ?? null, status: 'uploading', thumbnail_key: null, deleted_at: null, purge_after: null, bin_group: null });
     return { ok: true, used: used + a.p_size, quota: 2147483648 };
   },
   super_suspended_events: () => T.events.filter((e) => e.suspended_at && !e.deleted_at).map((e) => { const p = T.profiles.find((x) => x.user_id === e.created_by) || {};
     const c = T.conversations.filter((x) => x.event_id === e.id && x.status === 'open').at(-1);
     return { event_id: e.id, host_id: e.created_by, host_email: p.email, host_name: p.display_name || null, event_title: e.title, suspended_at: e.suspended_at, suspend_reason: e.suspend_reason, conversation_id: c ? c.id : null }; }),
+  apply_file_names: (a) => { let n = 0; for (const u of a.p_updates) { const f = T.media_files.find((x) => x.id === u.id && x.event_id === a.p_event && !x.name_is_custom); if (f) { f.original_filename = u.name; f.name_applied = true; n++; } } return n; },
   system_totals: () => ({ hosts: 4, pending: 1, events: T.events.length, bytes_used: 0 }),
   super_host_list: () => T.profiles.filter((p) => p.role === 'host').map((p) => ({ user_id: p.user_id, email: p.email, display_name: p.display_name || null, status: p.status, events: 0, used_bytes: 0, quota_bytes: 2147483648, created_at: 'x' })),
   super_reports_list: () => T.reports.map((r) => {
@@ -501,6 +502,42 @@ check('delete account never touched host A', T.events.some((e) => e.created_by =
   check('renaming a file marks it as host-named', rn.status === 200 && f.name_is_custom === true);
   const r2 = await call(null, 'POST', `/event/${TOKEN_A}/download`, { file_ids: [FN] });
   check('a name typed by the host wins over the convention', r2.data.items[0].filename === 'Bride and groom.jpg');
+}
+
+/* ---------------- stored names: at upload, on event/folder rename, on move, and "apply to all" ---------------- */
+{
+  const ev = T.events.find((e) => e.id === EA);
+  const up = (extra = {}) => call('tokA', 'POST', '/admin/upload/authorize', { event_id: EA, folder_id: FA, filename: 'IMG_0001.jpg', mime_type: 'image/jpeg', size_bytes: 1000, taken_at: '2026-11-11T08:18:54Z', ...extra });
+  const u1 = await up();
+  const row1 = T.media_files.find((f) => f.id === u1.data.file_id);
+  const base = `${ev.title.replace(/\s+/g, '-')}_${T.media_folders.find((x) => x.id === FA).name.replace(/\s+/g, '-')}_2026-11-11-11-18-54`;
+  check('upload: the stored name is Event_Folder_time.ext', u1.status === 201 && row1.original_filename === `${base}.jpg`);
+  check('upload: the camera name is kept for the duplicate warning, and the name is marked as stored', row1.source_filename === 'IMG_0001.jpg' && row1.name_applied === true);
+  const u2 = await up();
+  check('upload: a second file with the same second gets -2', T.media_files.find((f) => f.id === u2.data.file_id).original_filename === `${base}-2.jpg`);
+  const dup = await call('tokA', 'POST', '/admin/upload/check', { event_id: EA, folder_id: FA, files: [{ name: 'IMG_0001.jpg', size: 1000 }] });
+  check('upload: the duplicate warning still recognises the camera name', dup.data.results[0].duplicate === 'same_name_size');
+
+  const mine = () => T.media_files.filter((f) => f.event_id === EA && !f.name_is_custom && f.created_at && ['ready', 'uploading'].includes(f.status));   // (rows without created_at are leftovers of the mock; real rows always have one)
+  const rn = await call('tokA', 'PATCH', `/admin/events/${EA}`, { title: 'New Title' });
+  check('renaming the event renames the stored file names', rn.status === 200 && mine().length > 0 && mine().every((f) => f.original_filename.startsWith('New-Title_')));
+  check('renaming the event never touches a name the host typed', T.media_files.filter((f) => f.name_is_custom).every((f) => f.original_filename === 'Bride and groom.jpg'));
+
+  const fr = await call('tokA', 'PATCH', `/admin/folders/${FA}`, { name: 'Speeches' });
+  check('renaming a folder renames the files directly inside it', fr.status === 200 && mine().filter((f) => f.folder_id === FA).every((f) => f.original_filename.includes('_Speeches_')));
+
+  const moved = mine().find((f) => f.folder_id === FA);
+  const mv = await call('tokA', 'POST', '/admin/files/bulk', { action: 'move', file_ids: [moved.id], folder_id: null });
+  check('moving a file out of its folder renames it (no folder part)', mv.status === 200 && /^New-Title_\d{4}-/.test(T.media_files.find((f) => f.id === moved.id).original_filename));
+
+  const old = mine().find((f) => f.id !== moved.id);
+  old.original_filename = 'IMG_9.jpg'; old.name_applied = false;
+  const all = await call('tokA', 'POST', `/admin/events/${EA}/rename-files`);
+  check('"Apply to all files" names files that were never named', all.status === 200 && all.data.renamed >= 1 && old.original_filename.startsWith('New-Title_') && old.name_applied === true);
+  const again = await call('tokA', 'POST', `/admin/events/${EA}/rename-files`);
+  check('applying again changes nothing', again.data.renamed === 0);
+  T.profiles.find((p) => p.user_id === U(2)).status = 'active';
+  check('another host cannot apply naming to this event', (await call(B, 'POST', `/admin/events/${EA}/rename-files`)).status === 404);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

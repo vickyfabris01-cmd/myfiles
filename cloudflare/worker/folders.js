@@ -1,5 +1,6 @@
 // cloudflare/worker/folders.js
 // Administrator folder management and event contents listing.
+import { renameQuietly } from './renamer.js';
 import { ApiError, v, readJson, created, chunk } from './utils.js';
 import { LIMITS } from './config.js';
 import { parseListParams, queryFiles, shapeFile, shapeFolderCards } from './media.js';
@@ -75,6 +76,7 @@ export async function update({ request, db, params, admin }) {
   if (mode === 'manual' && !cover) throw new ApiError(400, 'VALIDATION_ERROR', 'Choose a cover file for manual cover mode');
   if (!Object.keys(patch).length) throw new ApiError(400, 'VALIDATION_ERROR', 'Nothing to update');
   const [row] = await db.update('media_folders', { id: `eq.${cur.id}` }, patch);
+  if (patch.name && patch.name !== cur.name) await renameQuietly(db, cur.event_id, { folderId: cur.id });   // the folder name is part of its files' names
   return { folder: row };
 }
 

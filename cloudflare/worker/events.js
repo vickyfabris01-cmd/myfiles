@@ -5,6 +5,7 @@ import { LIMITS } from './config.js';
 import { generateToken, hashToken, encryptToken, decryptToken } from './tokens.js';
 import { fileInfoMap, thumbUrl } from './media.js';
 import { ownedEvent } from './owner.js';
+import { renameFiles, renameQuietly } from './renamer.js';
 
 const shareUrl = (env, token) => `${String(env.PUBLIC_SITE_URL || '').replace(/\/+$/, '')}/e/${token}`;
 
@@ -60,7 +61,7 @@ export async function getShaped(env, db, id, ownerId) {
 }
 
 const getRow = (db, user, id) =>
-  ownedEvent(db, user, id, 'id,deleted_at,purge_after,suspended_at,is_published,publish_at,unpublish_at,cover_mode,cover_file_id');
+  ownedEvent(db, user, id, 'id,title,deleted_at,purge_after,suspended_at,is_published,publish_at,unpublish_at,cover_mode,cover_file_id');
 
 const notDeleted = (e) => {
   if (e.deleted_at) throw new ApiError(409, 'EVENT_DELETED', 'Restore this event before changing it');
@@ -126,7 +127,15 @@ export async function update({ request, env, db, params, admin }) {
   if (mode === 'manual' && !cover) throw new ApiError(400, 'VALIDATION_ERROR', 'Choose a cover file for manual cover mode');
   if (!Object.keys(patch).length) throw new ApiError(400, 'VALIDATION_ERROR', 'Nothing to update');
   await db.update('events', { id: `eq.${cur.id}`, created_by: `eq.${admin.id}` }, patch);
+  if (patch.title && patch.title !== cur.title) await renameQuietly(db, cur.id);   // the event name is part of every file name
   return { event: await getShaped(env, db, cur.id, admin.id) };
+}
+
+// POST /admin/events/:id/rename-files   store the naming convention on every file of the event (also files uploaded before it existed)
+export async function renameAllFiles({ db, params, admin }) {
+  const cur = await getRow(db, admin, params.id);
+  notDeleted(cur);
+  return { renamed: await renameFiles(db, cur.id) };
 }
 
 // Manual publish / unpublish. Never deletes anything.

@@ -1,5 +1,6 @@
 // cloudflare/worker/files.js
 // Administrator media metadata: rename, move, delete, thumbnails.
+import { renameQuietly } from './renamer.js';
 import { ApiError, v, readJson, chunk } from './utils.js';
 import { LIMITS, OBJECT_KEYS } from './config.js';
 import { presign } from './r2.js';
@@ -32,6 +33,7 @@ export async function update({ request, db, params, admin }) {
   }
   if (!Object.keys(patch).length) throw new ApiError(400, 'VALIDATION_ERROR', 'Nothing to update');
   const [row] = await db.update('media_files', { id: `eq.${cur.id}` }, patch);
+  if ('folder_id' in patch && !('name_is_custom' in patch)) await renameQuietly(db, cur.event_id, { fileIds: [cur.id] });   // a new folder changes the name
   return { file: { id: row.id, folder_id: row.folder_id, filename: row.original_filename } };
 }
 
@@ -76,6 +78,7 @@ export async function bulk({ request, env, db, admin }) {
     const folderId = v.uuid(b.folder_id, 'folder_id', { optional: true });
     await assertFolderInEvent(db, folderId, files[0].event_id);
     await db.update('media_files', { id: `in.(${ids.join(',')})` }, { folder_id: folderId });
+    await renameQuietly(db, files[0].event_id, { fileIds: ids });   // the folder is part of the name
     return { moved: ids.length };
   }
   await binOrPurge(env, db, files);

@@ -55,6 +55,7 @@ const ROUTES = [
   ['POST', '/admin/events/:id/publish', 'admin', 'host', ev.publish],
   ['POST', '/admin/events/:id/schedule', 'admin', 'host', ev.schedule],
   ['GET', '/admin/events/:id/share-link', 'admin', 'host', ev.shareLink],
+  ['POST', '/admin/events/:id/rename-files', 'admin', 'host', ev.renameAllFiles],
   ['POST', '/admin/events/:id/share-link/regenerate', 'admin', 'host', ev.regenerateShareLink],
   ['GET', '/admin/events/:id/contents', 'admin', 'host', fo.contents],
 

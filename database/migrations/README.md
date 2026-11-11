@@ -21,3 +21,6 @@ Run order: 003, 004, 005, 006. Then deploy the Worker, then the site.
 
 ## Download names (007)
 `007_download_names.sql` adds `media_files.name_is_custom` and extends `files_manifest`, so downloads are named `Event_Folder_YYYY-MM-DD-HH-MM-SS.ext` automatically (a file the host renamed by hand keeps that name). Run it ONCE, after 006 and BEFORE deploying the Worker. Run order: 003, 004, 005, 006, 007.
+
+## Stored names (008)
+`008_stored_names.sql` makes the convention names permanent: they are written to the file when it is uploaded, when an event or folder is renamed, when files are moved, and by the "Apply to all files" button. Adds `source_filename` (the camera name, used for the duplicate warning), `name_applied` and `apply_file_names()`. Run it ONCE, after 007 and BEFORE deploying the Worker. Run order: 003, 004, 005, 006, 007, 008.
