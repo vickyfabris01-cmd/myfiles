@@ -73,6 +73,13 @@ export async function updatePassword(accessToken, password) {
   await gotrue('user', { password }, accessToken, 'PUT');
 }
 
+// Change the password of the signed-in account. The current password is checked first (a stolen open tab cannot change it),
+// using a separate sign-in that is thrown away, so the session in this browser is left as it is.
+export async function changePassword(email, currentPassword, newPassword) {
+  const j = await gotrue('token?grant_type=password', { email, password: currentPassword });
+  await gotrue('user', { password: newPassword }, j.access_token, 'PUT');
+}
+
 export async function signOut() {
   const s = read();
   write(null);

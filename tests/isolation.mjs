@@ -451,7 +451,9 @@ await call('tokS', 'POST', `/super/hosts/${U(2)}/restore`);
 
 // the host's own name
 check('a host can set their name; blank, over-long and control-character names are refused', (await call(B, 'PATCH', '/admin/account', { name: 'Bob Builder' })).status === 200 && T.profiles.find((p) => p.user_id === U(2)).display_name === 'Bob Builder' && (await call(B, 'PATCH', '/admin/account', { name: '   ' })).status === 400 && (await call(B, 'PATCH', '/admin/account', { name: 'x'.repeat(81) })).status === 400 && (await call(B, 'PATCH', '/admin/account', { name: 'Bob\u0007' })).status === 400 && (await call(B, 'GET', '/admin/me')).data.admin.name === 'Bob Builder');
-check('a host cannot rename another host, and the super admin and anonymous users cannot use the route', T.profiles.find((p) => p.user_id === U(1)).display_name === 'Alice Host' && (await call('tokS', 'PATCH', '/admin/account', { name: 'x' })).code === 'SUPER_ADMIN_NO_EVENTS' && (await call(null, 'PATCH', '/admin/account', { name: 'x' })).status === 401);
+check('a host cannot rename another host, and the super admin and anonymous users cannot use the route', T.profiles.find((p) => p.user_id === U(1)).display_name === 'Alice Host' && (await call(null, 'PATCH', '/admin/account', { name: 'x' })).status === 401);
+check('the super admin can rename their own account (and only their own)', (await call('tokS', 'PATCH', '/admin/account', { name: 'Owner One' })).data.name === 'Owner One' && T.profiles.find((p) => p.user_id === U(5)).display_name === 'Owner One' && T.profiles.find((p) => p.user_id === U(1)).display_name === 'Alice Host');
+check('a pending host can rename their own account too', (await call('tokC', 'PATCH', '/admin/account', { name: 'Cara' })).data.name === 'Cara');
 
 /* ---------------- 7. delete my account ---------------- */
 check('delete account needs the word DELETE', (await call('tokA', 'POST', '/admin/account/delete', { confirm: 'no' })).status === 400);
@@ -461,5 +463,28 @@ const dacc = await call(B, 'POST', '/admin/account/delete', { confirm: 'DELETE' 
 check('delete account removes the host\'s events, files and profile', dacc.status === 200 && !T.events.some((e) => e.created_by === U(2)) && ![...R2.objects].some((k) => k.includes(evB.data.event.id)) && !T.profiles.some((p) => p.user_id === U(2)));
 check('delete account never touched host A', T.events.some((e) => e.created_by === U(1)));
 
+/* ---------------- super admin host page and direct event suspend (reported events only) ---------------- */
+{
+  const hd = await call('tokS', 'GET', `/super/hosts/${U(1)}`);
+  check('host page: returns the host, reports on their events, conversations', hd.status === 200 && hd.data.host.email === 'a@x.test' && Array.isArray(hd.data.reports) && Array.isArray(hd.data.conversations));
+  check('host page: lists only reported or suspended events, never the others', hd.data.flagged_events.every((e) => e.suspended_at || e.report_count > 0));
+  check('host page: a host cannot open it, and the super admin id is not a host', (await call(B, 'GET', `/super/hosts/${U(1)}`)).status === 403 && (await call('tokS', 'GET', `/super/hosts/${U(5)}`)).status === 404);
+  const ev = T.events.find((e) => e.id === EA);
+  const open = T.reports.filter((r) => r.event_id === EA);
+  check('a report exists on the event (after earlier steps), so it is flagged on the host page', open.length > 0 && hd.data.flagged_events.some((e) => e.id === EA));
+  open.forEach((r) => { r.status = 'dismissed'; });          // the case that was a dead end: every report dismissed
+  ev.suspended_at = null;
+  const s1 = await call('tokS', 'POST', `/super/events/${EA}/suspend`, { message: 'Please read our rules.' });
+  check('a dismissed report no longer blocks suspending the event again', s1.status === 200 && s1.data.event_suspended === true && !!T.events.find((e) => e.id === EA).suspended_at);
+  check('suspending again is refused when it is already suspended', (await call('tokS', 'POST', `/super/events/${EA}/suspend`, {})).status === 409);
+  check('the host page now shows the event as suspended', (await call('tokS', 'GET', `/super/hosts/${U(1)}`)).data.flagged_events.find((e) => e.id === EA).suspended_at);
+  check('a host cannot use the direct suspend route', (await call(B, 'POST', `/super/events/${EA}/suspend`, {})).status === 403);
+  const savedReports = T.reports.splice(0);                      // an event nobody ever reported cannot be suspended by id
+  ev.suspended_at = null;
+  check('an event that was never reported cannot be suspended by id (owner does not browse events)', (await call('tokS', 'POST', `/super/events/${EA}/suspend`, {})).code === 'NOT_REPORTED' && !T.events.find((e) => e.id === EA).suspended_at);
+  T.reports.push(...savedReports);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+

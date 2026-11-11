@@ -99,6 +99,13 @@ export async function superList({ db, url }) {
   return { conversations: rows.map((c) => superShape(c, hosts)) };
 }
 
+// The conversations of ONE host, newest first (used by the host page).
+export async function hostConversations(db, hostId) {
+  const rows = await db.select('conversations', { select: COLS, host_id: `eq.${hostId}`, order: 'last_message_at.desc', limit: 100 });
+  const hosts = await hostMap(db, [hostId]);
+  return rows.map((c) => ({ ...superShape(c, hosts), event_id: c.event_id || null }));
+}
+
 // GET /super/conversations/:id
 export async function superGet({ db, params }) {
   let c = await anyConversation(db, params.id);

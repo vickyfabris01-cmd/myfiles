@@ -205,3 +205,17 @@ dialog.modal.vt { width: min(640px, calc(100vw - 24px)); }
 .rp-reason { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
 .media-view { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .media-view img, .media-view video { max-width: 100%; max-height: 62dvh; border-radius: 12px; background: var(--surface-2); }
+
+/* super admin pages, account page */
+.who.active { color: var(--accent); font-weight: 700; }
+a.who { text-decoration: none !important; } a.who:hover { color: var(--text); }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+@media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
+.tile-link { display: flex; flex-direction: column; gap: 2px; color: var(--text); text-decoration: none !important; }
+.tile-link b { font-size: 1.35rem; letter-spacing: -.02em; } .tile-link span { color: var(--muted); font-size: .85rem; }
+.tile-link.attn { border-color: var(--accent); }
+.back-link { display: inline-flex; margin-bottom: 8px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.filters .input { flex: 1; min-width: 180px; }
+.host-link { color: var(--text); text-decoration: none !important; display: block; } .host-link:hover b { color: var(--accent); }
+.pw-form { max-width: 420px; }

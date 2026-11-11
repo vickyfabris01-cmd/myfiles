@@ -19,6 +19,11 @@ const STORAGE = new URL('../../admin/storage.html', import.meta.url).href;
 const SUPER = new URL('../../admin/super.html', import.meta.url).href;
 const MESSAGES = new URL('../../admin/messages.html', import.meta.url).href;
 const FORGOT = new URL('../../admin/forgot.html', import.meta.url).href;
+const HOSTS = new URL('../../admin/hosts.html', import.meta.url).href;
+const HOST = new URL('../../admin/host.html', import.meta.url).href;
+const REPORTS = new URL('../../admin/reports.html', import.meta.url).href;
+const CONVERSATIONS = new URL('../../admin/conversations.html', import.meta.url).href;
+const ACCOUNT = new URL('../../admin/account.html', import.meta.url).href;
 
 // Central place for page links, so pages never hard-code paths.
 export const ROUTES = {
@@ -29,6 +34,11 @@ export const ROUTES = {
   storage: STORAGE,
   super: SUPER,
   messages: MESSAGES,
+  account: ACCOUNT,
+  hosts: HOSTS,
+  host: (id) => `${HOST}?id=${encodeURIComponent(id)}`,
+  reports: REPORTS,
+  conversations: (id) => (id ? `${CONVERSATIONS}?c=${encodeURIComponent(id)}` : CONVERSATIONS),
   events: EVENTS,
   editor: (id, folderId) => `${EDITOR}?id=${encodeURIComponent(id)}${folderId ? `&folder=${encodeURIComponent(folderId)}` : ''}`,
   upload: (eventId, folderId) => {
@@ -72,7 +82,7 @@ export function mountHeader(admin, active) {
   const badge = h('span', { class: 'nav-badge', hidden: true });
   const msgLink = h('a', { class: `navlink${active === 'messages' ? ' active' : ''}`, href: MESSAGES }, icon('message', 18), h('span', null, 'Messages'), badge);
   const nav = isSuper
-    ? [link('super', SUPER, 'Dashboard', 'select')]
+    ? [link('super', SUPER, 'Dashboard', 'select'), link('hosts', HOSTS, 'Hosts', 'folder'), link('reports', REPORTS, 'Reports', 'flag'), link('conversations', CONVERSATIONS, 'Conversations', 'message')]
     : inactive ? [msgLink]
     : [link('events', EVENTS, 'Events', 'calendar'), link('upload', UPLOAD, 'Upload', 'upload'), link('storage', STORAGE, 'Storage', 'cloud-lock'), link('bin', BIN, 'Bin', 'trash'), msgLink];
   const doSignOut = async () => { await signOut(); redirectToLogin('signed_out'); };
@@ -84,7 +94,7 @@ export function mountHeader(admin, active) {
     h('a', { class: 'brand', href: isSuper ? SUPER : EVENTS }, h('span', { class: 'brand-mark' }, icon('cloud-lock', 18)), h('span', null, 'MyFiles')),
     h('nav', { class: 'nav desk-only' }, nav),
     h('span', { class: 'spacer' }),
-    h('span', { class: 'who desk-only' }, admin.email || 'Account'),
+    h('a', { class: `who desk-only${active === 'account' ? ' active' : ''}`, href: ACCOUNT, title: 'Your name and password' }, admin.name || admin.email || 'Account'),
     h('span', { class: 'desk-only' }, createInstallButton()),
     h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Toggle dark mode', onclick: toggleTheme }, icon('moon')),
     h('button', { class: 'btn icon ghost desk-only', type: 'button', 'aria-label': 'Sign out', onclick: doSignOut }, icon('logout')),
@@ -92,7 +102,7 @@ export function mountHeader(admin, active) {
 
   const tab = (key, href, label, ic) => h('a', { class: `bn-item${active === key ? ' active' : ''}`, href, 'aria-current': active === key ? 'page' : null }, icon(ic, 22), h('span', null, label));
   const tabs = isSuper
-    ? [tab('super', SUPER, 'Dashboard', 'select')]
+    ? [tab('super', SUPER, 'Dashboard', 'select'), tab('hosts', HOSTS, 'Hosts', 'folder'), tab('reports', REPORTS, 'Reports', 'flag'), tab('conversations', CONVERSATIONS, 'Chats', 'message')]
     : inactive ? [tab('messages', MESSAGES, 'Messages', 'message')]
     : [tab('events', EVENTS, 'Events', 'calendar'), tab('upload', UPLOAD, 'Upload', 'upload'), tab('storage', STORAGE, 'Storage', 'cloud-lock'), tab('bin', BIN, 'Bin', 'trash')];
 
@@ -103,6 +113,7 @@ export function mountHeader(admin, active) {
   const sheet = h('div', { class: 'more-sheet', id: 'more-sheet', role: 'menu', hidden: true, 'aria-label': 'Account menu' },
     h('p', { class: 'more-who' }, admin.name ? `${admin.name} - ${admin.email || ''}` : (admin.email || 'Account')),
     isSuper || inactive ? null : h('a', { class: 'btn ghost', href: MESSAGES, role: 'menuitem' }, icon('message', 18), 'Messages', sheetBadge),
+    h('a', { class: 'btn ghost', href: ACCOUNT, role: 'menuitem' }, icon('edit', 18), 'My account'),
     createInstallButton(),
     h('button', { class: 'btn ghost', type: 'button', role: 'menuitem', onclick: doSignOut }, icon('logout', 18), 'Sign out'));
   const closeMenu = (refocus) => { if (sheet.hidden) return; sheet.hidden = true; more.setAttribute('aria-expanded', 'false'); if (refocus) more.focus(); };

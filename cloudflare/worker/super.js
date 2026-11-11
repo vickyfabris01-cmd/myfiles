@@ -7,7 +7,7 @@ import { ApiError, v, readJson } from './utils.js';
 import { clearAuthCache } from './auth.js';
 import { LIMITS } from './config.js';
 import { presign } from './r2.js';
-import { notifyHost, TEXT } from './messages.js';
+import { notifyHost, hostConversations, TEXT } from './messages.js';
 
 const num = (x) => Number(x) || 0;
 const settingsRow = async (db) => (await db.select('app_settings', { select: '*', limit: 1 }))[0];
@@ -95,6 +95,8 @@ export async function reports({ db, url }) {
   return {
     reports: rows.map((r) => ({
       id: r.id,
+      event_id: r.event_id,
+      host_id: r.host_id,
       host_email: r.host_email,
       host_name: r.host_name || null,
       reason: r.reason,
@@ -188,4 +190,42 @@ export async function suspendHostFromReport({ request, db, params }) {
   clearAuthCache();
   const conversation_id = await notifyHost(db, { hostId: r.host_id, reportId: r.id, kind: 'account_suspended', subject: 'Your account was suspended', body: message || TEXT.accountSuspended() });
   return { id: r.id, host_suspended: true, conversation_id };
+}
+
+// ---- one host: the page the super admin opens to act on a host or on one of that host's events ----
+// Privacy: the host's events are NOT listed. Only events that were reported at least once, or are suspended right now, appear,
+// because those are the only ones the owner may act on (the same events that already show up in Reports).
+// GET /super/hosts/:id
+export async function hostDetail({ db, params }) {
+  const p = await host(db, params.id);
+  const row = ((await db.rpc('super_host_list')) || []).find((x) => x.user_id === p.user_id) || {};
+  const evs = await db.select('events', { select: 'id,title,suspended_at,deleted_at', created_by: `eq.${p.user_id}`, limit: 1000 });
+  const reps = evs.length
+    ? await db.select('reports', { select: 'id,event_id,reason,status,created_at,event_title,folder_name,file_name', event_id: `in.(${evs.map((e) => e.id).join(',')})`, order: 'created_at.desc', limit: 200 })
+    : [];
+  const flagged = evs.map((e) => {
+    const mine = reps.filter((r) => r.event_id === e.id);
+    return { id: e.id, title: e.title, suspended_at: e.suspended_at || null, in_bin: !!e.deleted_at, report_count: mine.length, open_reports: mine.filter((r) => r.status === 'open').length, last_report_at: mine.length ? mine[0].created_at : null };
+  }).filter((e) => e.suspended_at || e.report_count);
+  return {
+    host: { id: p.user_id, email: p.email, name: row.display_name || null, status: p.status, events: num(row.events), used_bytes: num(row.used_bytes), quota_bytes: num(row.quota_bytes), created_at: row.created_at || null },
+    flagged_events: flagged,
+    reports: reps.map((r) => ({ id: r.id, event_id: r.event_id, event_title: r.event_title || (evs.find((e) => e.id === r.event_id) || {}).title || null, reason: r.reason, status: r.status, folder_name: r.folder_name || null, file_name: r.file_name || null, created_at: r.created_at })),
+    conversations: await hostConversations(db, p.user_id),
+  };
+}
+
+// POST /super/events/:id/suspend  { message? }
+// Switch a REPORTED event off without needing an open report, so a dismissed report no longer ends the owner's options.
+// Refused for an event nobody has ever reported: the owner does not browse hosts' events.
+export async function suspendEventById({ request, db, params }) {
+  const [e] = await db.select('events', { select: 'id,title,created_by,suspended_at', id: `eq.${v.uuid(params.id, 'id')}`, limit: 1 });
+  if (!e) throw new ApiError(404, 'EVENT_NOT_FOUND', 'Event not found');
+  if (e.suspended_at) throw new ApiError(409, 'BAD_STATE', 'This event is already suspended');
+  const { total } = await db.selectCount('reports', { select: 'id', event_id: `eq.${e.id}`, limit: 1 });
+  if (!total) throw new ApiError(403, 'NOT_REPORTED', 'You can only suspend an event that has been reported.');
+  const message = optMessage(await readJson(request));
+  const conversation_id = await switchEventOff(db, { eventId: e.id, hostId: e.created_by, title: e.title, message });
+  await resolveAll(db, e.id, 'actioned');
+  return { id: e.id, event_suspended: true, conversation_id };
 }

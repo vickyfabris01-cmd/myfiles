@@ -86,12 +86,13 @@ const ROUTES = [
   ['POST', '/admin/bin/empty', 'admin', 'host', bin.empty],
   ['GET', '/admin/storage', 'admin', 'host', usage.storage],
   ['POST', '/admin/account/delete', 'admin', 'host', usage.deleteAccount],
-  ['PATCH', '/admin/account', 'admin', 'host', account.rename],
+  ['PATCH', '/admin/account', 'admin', 'any', account.rename],   // every account (host or owner, any state) can change its own name
 
   // super admin (counts and sizes only; reports also carry the names needed to review them and one openable file)
   ['GET', '/super/overview', 'admin', 'super', sup.overview],
   ['GET', '/super/hosts', 'admin', 'super', sup.hosts],
   ['PATCH', '/super/settings', 'admin', 'super', sup.updateSettings],
+  ['GET', '/super/hosts/:id', 'admin', 'super', sup.hostDetail],
   ['POST', '/super/hosts/:id/approve', 'admin', 'super', sup.hostAction('approve')],
   ['POST', '/super/hosts/:id/suspend', 'admin', 'super', sup.hostAction('suspend')],
   ['POST', '/super/hosts/:id/restore', 'admin', 'super', sup.hostAction('restore')],
@@ -103,6 +104,7 @@ const ROUTES = [
   ['POST', '/super/reports/:id/unsuspend-event', 'admin', 'super', sup.unsuspendEvent],
   ['POST', '/super/reports/:id/suspend-host', 'admin', 'super', sup.suspendHostFromReport],
   ['GET', '/super/suspended-events', 'admin', 'super', msg.suspendedEvents],
+  ['POST', '/super/events/:id/suspend', 'admin', 'super', sup.suspendEventById],
   ['POST', '/super/events/:id/unsuspend', 'admin', 'super', sup.unsuspendEventById],
   ['GET', '/super/conversations', 'admin', 'super', msg.superList],
   ['POST', '/super/conversations', 'admin', 'super', msg.superStart],

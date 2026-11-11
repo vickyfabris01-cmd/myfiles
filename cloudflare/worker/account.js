@@ -1,5 +1,5 @@
 // cloudflare/worker/account.js
-// PATCH /admin/account  { name }   a host sets or changes the name shown to the owner next to their email.
+// PATCH /admin/account  { name }   any account (host or owner) sets or changes the name shown to the owner next to their email.
 import { ApiError, v, readJson } from './utils.js';
 
 export async function rename({ request, db, admin }) {

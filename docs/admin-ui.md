@@ -9,12 +9,19 @@ Plain HTML, CSS and ES modules. No framework, no build step, no CDN. Uses only t
 | admin/events.html | js/admin/dashboard.js | Events overview, create, publish toggle, copy link, recently deleted + restore |
 | admin/event-editor.html?id= | js/admin/events.js | Media, Details (cover mode), Publishing (status, schedule, share link, delete) |
 | admin/upload.html?event=&folder= | js/admin/upload-page.js | Batch upload with progress, retry, cancel, resume |
+| admin/account.html | js/admin/account.js | My account (hosts and the owner): change name, change password (current password asked first) |
+| admin/super.html | js/admin/super.js | Owner dashboard: numbers, R2 budget, sign-up switch, links to what needs attention |
+| admin/hosts.html | js/admin/hosts.js | Owner: all hosts, search, status filter, approve |
+| admin/host.html?id= | js/admin/host.js | Owner: one host. Suspend/restore host, message, add storage, suspend/restore any reported or suspended event, report history, conversations |
+| admin/reports.html | js/admin/reports.js | Owner: open reports and history (a dismissed report can still lead to suspending the event again) and all suspended events |
+| admin/conversations.html | js/admin/conversations.js | Owner: conversations with hosts, open and history. `?c=<id>` opens one |
 
 ## Modules
 - `js/config.js` API URL, Supabase URL and public key (the only file to edit).
 - `js/supabase.js` sign in, refresh, sign out, session in localStorage, cross-tab sign-out.
 - `js/api.js` `get/post/patch/del`, adds the token, refreshes once on 401, throws `ApiError {status, code, message, details}`.
 - `js/admin/auth.js` `requireAdmin()` guard (calls `/admin/me`), header, `ROUTES` for page links.
+- `js/admin/super-shared.js` actions shared by the owner pages (suspend/restore, messages, add storage, conversation window).
 - `js/admin/folders.js` media browser (nested folders, covers, selection, move, delete) and `pickFolder()`.
 - `js/admin/uploads.js` `UploadManager` engine and the upload page.
 - `js/admin/thumbs.js` browser-made JPEG previews (images and video frames). Originals are never touched.
