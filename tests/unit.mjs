@@ -3,6 +3,7 @@ import worker from '../cloudflare/worker/index.js';
 import { signUrl } from '../cloudflare/worker/r2.js';
 import * as fi from '../cloudflare/worker/files.js';
 import { pickFiles, layoutFor, sourceKey, OG_W, OG_H } from '../cloudflare/worker/og.js';
+import { downloadName, stamp } from '../cloudflare/worker/names.js';
 import { generateToken, hashToken, encryptToken, decryptToken } from '../cloudflare/worker/tokens.js';
 
 let pass = 0, fail = 0;
@@ -85,6 +86,18 @@ check('preview image route: malformed token -> 404 JSON, not an image', pi.statu
   const src = await fi.sourceUrl({ env: envT, db: fakeDb, admin: OWNER, params: { id: F } });
   check('source: admin gets a signed link to the original', src.url.includes(row.object_key) && src.url.includes('X-Amz-Signature'));
 }
+
+// download names:  Event_Folder_YYYY-MM-DD-HH-MM-SS.ext  (Nairobi time)
+check('stamp uses Nairobi time (UTC+3)', stamp('2026-11-11T08:18:54Z') === '2026-11-11-11-18-54');
+check('stamp of nothing or junk is null', stamp(null) === null && stamp('nope') === null);
+const F = (o = {}) => ({ original_filename: 'Img2026-11-09-202407.PNG', mime_type: 'image/png', taken_at: '2026-11-11T08:18:54Z', created_at: '2026-11-12T00:00:00Z', name_is_custom: false, ...o });
+check('file in a folder: event_folder_time.ext', downloadName({ event: 'Amina Wedding', folder: 'Reception', file: F() }) === 'Amina-Wedding_Reception_2026-11-11-11-18-54.png');
+check('file not in a folder: the folder part is left out', downloadName({ event: 'Amina Wedding', folder: null, file: F() }) === 'Amina-Wedding_2026-11-11-11-18-54.png');
+check('no date taken: the upload time is used', downloadName({ event: 'E', folder: null, file: F({ taken_at: null }) }) === 'E_2026-11-12-03-00-00.png');
+check('illegal characters are dropped, spaces become hyphens, parts are cut to 40', downloadName({ event: 'A/B: "C"?  D', folder: 'x'.repeat(60), file: F() }) === `AB-C-D_${'x'.repeat(40)}_2026-11-11-11-18-54.png`);
+check('no extension in the name: taken from the mime type', downloadName({ event: 'E', folder: null, file: F({ original_filename: 'IMG_0001', mime_type: 'video/mp4' }) }).endsWith('.mp4'));
+check('a name the host typed is kept as it is', downloadName({ event: 'E', folder: 'F', file: F({ original_filename: 'Bride and groom.jpg', name_is_custom: true }) }) === 'Bride and groom.jpg');
+check('an empty event title still gives a usable name', downloadName({ event: '///', folder: null, file: F() }) === 'event_2026-11-11-11-18-54.png');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

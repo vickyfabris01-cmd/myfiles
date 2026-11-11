@@ -77,6 +77,7 @@ export class DownloadManager {
     const x = r.items && r.items[0];
     if (!x) throw Object.assign(new Error('This file is no longer available'), { fatal: true });
     it.url = x.url; it.urlAt = Date.now();
+    if (x.filename && !it.saveName) it.filename = x.filename;   // the server decides the saved name (event, folder and time taken)
     return x.url;
   }
 

@@ -485,6 +485,24 @@ check('delete account never touched host A', T.events.some((e) => e.created_by =
   T.reports.push(...savedReports);
 }
 
+/* ---------------- download names: event_folder_time, host rename wins ---------------- */
+{
+  const ev = T.events.find((e) => e.id === EA); ev.is_published = true; ev.suspended_at = null;
+  const FN = uuid(); mkFile(FN, FA);                       // a fresh file: earlier steps above removed the first ones
+  const f = T.media_files.find((x) => x.id === FN);
+  f.taken_at = '2026-11-11T08:18:54Z';
+  const r = await call(null, 'POST', `/event/${TOKEN_A}/download`, { file_ids: [FN] });
+  const folderName = T.media_folders.find((x) => x.id === FA).name;
+  const expected = `${ev.title.replace(/\s+/g, '-')}_${folderName.replace(/\s+/g, '-')}_2026-11-11-11-18-54`;
+  check('download name follows event_folder_time', r.status === 200 && r.data.items[0].filename.startsWith(expected) && /\.[a-z0-9]+$/.test(r.data.items[0].filename));
+  check('the download link carries the same name', decodeURIComponent(r.data.items[0].url).includes(expected));
+  check('the stored name is untouched by the convention', f.original_filename !== r.data.items[0].filename);
+  const rn = await call('tokA', 'PATCH', `/admin/files/${FN}`, { filename: 'Bride and groom.jpg' });
+  check('renaming a file marks it as host-named', rn.status === 200 && f.name_is_custom === true);
+  const r2 = await call(null, 'POST', `/event/${TOKEN_A}/download`, { file_ids: [FN] });
+  check('a name typed by the host wins over the convention', r2.data.items[0].filename === 'Bride and groom.jpg');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
 

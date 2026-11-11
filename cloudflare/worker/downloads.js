@@ -4,6 +4,13 @@ import { ApiError, v, readJson, clampInt } from './utils.js';
 import { LIMITS } from './config.js';
 import { presign } from './r2.js';
 import { loadEvent } from './public.js';
+import { downloadName } from './names.js';
+
+// folder id -> folder name, for every live folder of the event (one small query, used to build the download names)
+async function folderNames(db, eventId) {
+  const rows = await db.select('media_folders', { select: 'id,name', event_id: `eq.${eventId}`, deleted_at: 'is.null', limit: 5000 });
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
 
 function dispositionHeader(name) {
   const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
@@ -21,22 +28,24 @@ export async function urls({ request, env, db, params }) {
   const ids = [...new Set(b.file_ids.map((id) => v.uuid(id, 'file_ids[]')))];
   const inline = b.disposition === 'inline';
   const rows = await db.select('media_files', {
-    select: 'id,original_filename,size_bytes,object_key,mime_type,media_type',
+    select: 'id,original_filename,size_bytes,object_key,mime_type,media_type,folder_id,taken_at,created_at,name_is_custom',
     event_id: `eq.${e.id}`,
     status: 'eq.ready',
     deleted_at: 'is.null',
     id: `in.(${ids.join(',')})`,
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
+  const folders = await folderNames(db, e.id);
   const items = [];
   const missing = [];
   for (const id of ids) {
     const r = byId.get(id);
     if (!r) { missing.push(id); continue; }
-    const query = inline ? {} : { 'response-content-disposition': dispositionHeader(r.original_filename) };
+    const name = downloadName({ event: e.title, folder: r.folder_id ? folders.get(r.folder_id) : null, file: r });
+    const query = inline ? {} : { 'response-content-disposition': dispositionHeader(name) };
     items.push({
       file_id: r.id,
-      filename: r.original_filename,
+      filename: name,
       size_bytes: r.size_bytes,
       media_type: r.media_type,
       mime_type: r.mime_type,
@@ -63,8 +72,9 @@ export async function manifest({ env, db, params, url }) {
   const offset = clampInt(sp.get('offset'), 0, 10000000, 0);
   const rows = await db.rpc('files_manifest', { p_event: e.id, p_folder: folderId, p_recursive: recursive, p_limit: limit, p_offset: offset });
   const total = rows.length ? rows[0].total : 0;
+  const folders = await folderNames(db, e.id);
   return {
-    items: rows.map((r) => ({ id: r.id, filename: r.original_filename, size_bytes: r.size_bytes, media_type: r.media_type, folder_id: r.folder_id })),
+    items: rows.map((r) => ({ id: r.id, filename: downloadName({ event: e.title, folder: r.folder_id ? folders.get(r.folder_id) : null, file: r }), size_bytes: r.size_bytes, media_type: r.media_type, folder_id: r.folder_id })),
     total,
     limit,
     offset,

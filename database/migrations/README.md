@@ -18,3 +18,6 @@ times the reported file was opened) and two new report/host list functions. Run 
 `006_messages.sql` adds `conversations` and `conversation_messages` (the owner's notices and chats with hosts about suspensions)
 and `super_suspended_events()`. Run it ONCE, after 005. It does not delete anything and can be re-run safely.
 Run order: 003, 004, 005, 006. Then deploy the Worker, then the site.
+
+## Download names (007)
+`007_download_names.sql` adds `media_files.name_is_custom` and extends `files_manifest`, so downloads are named `Event_Folder_YYYY-MM-DD-HH-MM-SS.ext` automatically (a file the host renamed by hand keeps that name). Run it ONCE, after 006 and BEFORE deploying the Worker. Run order: 003, 004, 005, 006, 007.

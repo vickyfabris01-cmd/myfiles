@@ -28,6 +28,7 @@ export async function update({ request, db, params, admin }) {
     const n = v.str(b.filename, 'filename', { max: 255 });
     if (/[\u0000-\u001f\u007f/\\]/.test(n)) throw new ApiError(400, 'VALIDATION_ERROR', 'filename contains invalid characters');
     patch.original_filename = n;
+    patch.name_is_custom = true;   // a name typed by the host wins over the automatic download name
   }
   if (!Object.keys(patch).length) throw new ApiError(400, 'VALIDATION_ERROR', 'Nothing to update');
   const [row] = await db.update('media_files', { id: `eq.${cur.id}` }, patch);
